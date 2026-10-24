@@ -717,7 +717,7 @@ def test_user_preferences_persist_and_are_scoped_to_authenticated_user(client: T
     owner = create_owner(client)
     defaults = client.get("/api/v1/preferences", headers=owner)
     assert defaults.status_code == 200, defaults.text
-    assert defaults.json() == {"theme_mode": "dark", "accent_color": "violet", "density": "comfortable"}
+    assert defaults.json() == {"theme_mode": "dark", "accent_color": "blue", "density": "comfortable"}
 
     saved = client.patch("/api/v1/preferences", headers=owner, json={
         "theme_mode": "light", "accent_color": "cyan", "density": "compact"

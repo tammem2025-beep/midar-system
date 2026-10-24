@@ -416,7 +416,7 @@ def update_profile(data: UserProfileUpdate, ctx: AuthContext = Depends(get_conte
 def _preference_values(row: UserPreference | None) -> dict[str, str]:
     return {
         "theme_mode": row.theme_mode if row else "dark",
-        "accent_color": row.accent_color if row else "violet",
+        "accent_color": row.accent_color if row else "blue",
         "density": row.density if row else "comfortable",
     }
 
