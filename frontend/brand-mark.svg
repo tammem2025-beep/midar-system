@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" fill="none" role="img" aria-label="M brand mark">
+  <defs>
+    <linearGradient id="m-gradient" x1="14" y1="20" x2="112" y2="108" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#06C6DE"/>
+      <stop offset=".48" stop-color="#5366FF"/>
+      <stop offset="1" stop-color="#8B3FF2"/>
+    </linearGradient>
+  </defs>
+  <path d="M18 91V39C18 24 32 19 42 32L64 61L86 32C96 19 110 24 110 39V91"
+        stroke="url(#m-gradient)" stroke-width="12.5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

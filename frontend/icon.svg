@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="M — Digital Business Management">
+  <defs>
+    <linearGradient id="brand" x1="76" y1="82" x2="438" y2="414" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#06C6DE"/>
+      <stop offset=".49" stop-color="#5366FF"/>
+      <stop offset="1" stop-color="#8B3FF2"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientTransform="matrix(350 280 -260 325 72 48)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#5366FF" stop-opacity=".22"/>
+      <stop offset="1" stop-color="#0B1020" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="512" height="512" rx="116" fill="#0B1020"/>
+  <rect width="512" height="512" rx="116" fill="url(#glow)"/>
+  <rect x="2" y="2" width="508" height="508" rx="114" fill="none" stroke="#293750" stroke-width="3"/>
+  <path d="M105 366V203C105 160 143 142 173 177L256 276L339 177C369 142 407 160 407 203V366"
+        fill="none" stroke="url(#brand)" stroke-width="43" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

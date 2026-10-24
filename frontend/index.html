@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0B1020">
+  <meta name="description" content="M — Digital Business Management. منصة موحدة لإدارة الأعمال الرقمية والمحتوى والتواصل الاجتماعي.">
+  <meta name="color-scheme" content="dark light">
+  <meta name="application-name" content="M">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="M">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="mobile-web-app-capable" content="yes">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="shortcut icon" href="/favicon.ico" type="image/x-icon">
+  <title>M — Digital Business Management</title>
+  <link rel="stylesheet" href="/midar-ui.css?v=0.20.0">
+</head>
+<body>
+  <a href="#pageContent" class="xp-skip-link">تجاوز إلى المحتوى</a>
+  <div id="authScreen" class="auth-page hidden">
+    <section class="auth-card" aria-labelledby="authTitle">
+      <div class="auth-brand">
+        <div class="logo" aria-hidden="true"><img class="brand-mark-image" src="/brand-m-mark.svg" alt="" width="52" height="52"></div>
+        <div class="brand-copy auth-brand-copy"><h1>M</h1><p>Digital Business Management</p><small class="brand-tagline">Manage. Connect. Grow.</small></div>
+      </div>
+      <div class="auth-eyebrow"><span class="live-dot"></span> مساحة عملك الرقمية الآمنة</div>
+      <h2 id="authTitle">مرحبًا بك</h2>
+      <p id="authSubtitle">سجّل الدخول للمتابعة إلى مساحة عملك.</p>
+      <div id="authMessage" aria-live="polite"></div>
+      <form id="authForm">
+        <div id="setupFields" class="hidden">
+          <div class="field"><label for="setupName">اسمك الكامل</label><input id="setupName" name="full_name" autocomplete="name" minlength="2" required></div>
+          <div class="field"><label for="setupOrganization">اسم مساحة العمل أو الشركة</label><input id="setupOrganization" name="organization_name" autocomplete="organization" minlength="2" required></div>
+        </div>
+        <div class="field"><label for="authEmail">البريد الإلكتروني</label><input id="authEmail" type="email" name="email" autocomplete="email" required></div>
+        <div class="field"><label for="authPassword">كلمة المرور</label><input id="authPassword" type="password" name="password" autocomplete="current-password" minlength="12" required></div>
+        <div id="passwordHelp" class="help hidden">استخدم 12 حرفًا على الأقل. تُنشأ مساحة العمل لأول مرة فقط من هذه الشاشة.</div>
+        <button class="btn btn-primary auth-submit" type="submit" id="authSubmit">تسجيل الدخول</button>
+      </form>
+      <div id="googleAuthArea" class="google-auth-area">
+        <div class="auth-divider"><span>أو</span></div>
+        <button class="btn btn-google" type="button" id="googleLoginBtn" disabled>
+          <svg aria-hidden="true" width="19" height="19" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.75 7.18l7.72 5.99c4.5-4.16 7.07-10.28 7.07-17.64z"/><path fill="#FBBC05" d="M10.53 28.59A14.4 14.4 0 0 1 9.75 24c0-1.59.27-3.12.75-4.59l-7.98-6.19A23.9 23.9 0 0 0 0 24c0 3.86.92 7.5 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.91-5.81l-7.72-5.99C30.05 37.88 27.28 38.75 24 38.75c-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+          <span>المتابعة باستخدام Google</span>
+        </button>
+        <p class="help google-auth-note" id="googleAuthNote">يتطلب تسجيل Google إعداد OAuth على الخادم أولًا.</p>
+      </div>
+      <p class="auth-footnote">بيانات الدخول تُتحقق على الخادم. لا تدخل رموز المنصات الاجتماعية في شاشة تسجيل الدخول.</p>
+    </section>
+  </div>
+
+  <div id="appShell" class="shell hidden">
+    <div class="mobile-overlay" id="mobileOverlay" aria-hidden="true"></div>
+    <aside class="sidebar" id="sidebar" aria-label="التنقل الرئيسي">
+      <div class="sidebar-top">
+        <div class="sidebar-topbar">
+          <div class="brand" aria-label="M — Digital Business Management">
+            <div class="logo" aria-hidden="true"><img class="brand-mark-image" src="/brand-m-mark.svg" alt="" width="46" height="46"></div>
+            <div class="brand-copy"><b>M</b><small>Digital Business Management</small></div>
+          </div>
+          <button class="sidebar-collapse-btn" id="sidebarCollapseBtn" type="button" aria-label="تصغير القائمة الجانبية" aria-expanded="true" aria-controls="nav" title="تصغير القائمة الجانبية">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="3"></rect><path d="M9 5v14M14 9l-3 3 3 3"></path></svg>
+          </button>
+        </div>
+        <div class="workspace-card" aria-label="مساحة العمل الحالية">
+          <div class="workspace-monogram" aria-hidden="true"><img src="/brand-m-mark.svg" alt="" width="25" height="25"></div>
+          <div class="workspace-label">
+            <span class="workspace-eyebrow">مساحة العمل</span>
+            <strong id="workspaceName">مساحة العمل</strong>
+            <small><i class="workspace-status-dot" aria-hidden="true"></i> مساحة نشطة</small>
+          </div>
+          <span class="workspace-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"></path></svg></span>
+        </div>
+      </div>
+
+      <nav class="nav sidebar-navigation" id="nav" aria-label="أقسام M">
+        <section class="nav-section" aria-label="الرئيسية">
+          <div class="nav-label">الرئيسية</div>
+          <button data-page="dashboard" class="active" aria-current="page" aria-label="لوحة التحكم" title="لوحة التحكم"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m3.5 10 8.5-7 8.5 7v9.5a1 1 0 0 1-1 1h-5.2v-6.2h-4.6v6.2H4.5a1 1 0 0 1-1-1z"></path></svg></span><span class="nav-text">لوحة التحكم</span></button>
+        </section>
+
+        <section class="nav-section" aria-label="المحتوى والتسويق">
+          <div class="nav-label">المحتوى والتسويق</div>
+          <button data-page="posts" aria-label="المحتوى والمنشورات" title="المحتوى والمنشورات"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M7 3.5h7l4 4v13H7a2 2 0 0 1-2-2v-13a2 2 0 0 1 2-2Z"></path><path d="M14 3.5v4h4M8.5 12h7M8.5 16h7"></path></svg></span><span class="nav-text">المحتوى والمنشورات</span><span class="count" id="navPosts">0</span></button>
+          <button data-page="studio" aria-label="استوديو الفيديو القصير" title="استوديو الفيديو القصير"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="13" height="14" rx="3"></rect><path d="m16 10 5-3v10l-5-3z"></path></svg></span><span class="nav-text">استوديو الفيديو القصير</span></button>
+          <button data-page="campaigns" aria-label="الحملات التسويقية" title="الحملات التسويقية"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="11" cy="12" r="7.5"></circle><circle cx="11" cy="12" r="3"></circle><path d="m16.5 6.5 4-4M18 2.5h2.5V5"></path></svg></span><span class="nav-text">الحملات التسويقية</span></button>
+          <button data-page="media" aria-label="مكتبة الوسائط" title="مكتبة الوسائط"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"></rect><circle cx="8.5" cy="9" r="1.5"></circle><path d="m4 17 5-5 3.2 3 2.3-2 5.5 5"></path></svg></span><span class="nav-text">مكتبة الوسائط</span></button>
+        </section>
+
+        <section class="nav-section" aria-label="التواصل والعلاقات">
+          <div class="nav-label">التواصل والعلاقات</div>
+          <button data-page="inbox" aria-label="صندوق الرسائل" title="صندوق الرسائل"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="3"></rect><path d="m4 7 8 6 8-6M3.5 14h5l1.5 2h4l1.5-2h5"></path></svg></span><span class="nav-text">صندوق الرسائل</span></button>
+          <button data-page="contacts" aria-label="العملاء والمبيعات" title="العملاء والمبيعات"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"></circle><path d="M3.5 19v-1.2A4.8 4.8 0 0 1 8.3 13h1.4a4.8 4.8 0 0 1 4.8 4.8V19zM16 5.5a3 3 0 0 1 0 5.8M17 13h.8a3.8 3.8 0 0 1 3.7 3.8V19h-3"></path></svg></span><span class="nav-text">العملاء والمبيعات</span><span class="count" id="navLeads">0</span></button>
+          <button data-page="tasks" aria-label="المهام والعمليات" title="المهام والعمليات"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="17" rx="3"></rect><path d="M8 4V2.8M16 4V2.8M8 10h8M8 14l2 2 4-4"></path></svg></span><span class="nav-text">المهام والعمليات</span></button>
+        </section>
+
+        <section class="nav-section" aria-label="الحسابات والتكاملات">
+          <div class="nav-label">الحسابات والتكاملات</div>
+          <button data-page="accounts" aria-label="الحسابات الاجتماعية" title="الحسابات الاجتماعية"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="6" cy="12" r="2.5"></circle><circle cx="18" cy="5" r="2.5"></circle><circle cx="18" cy="19" r="2.5"></circle><path d="m8.3 10.8 7.3-4.5M8.3 13.2l7.3 4.5"></path></svg></span><span class="nav-text">الحسابات الاجتماعية</span></button>
+        </section>
+
+        <section class="nav-section" aria-label="الإدارة">
+          <div class="nav-label">الإدارة</div>
+          <button data-page="team" aria-label="إدارة الفريق" title="إدارة الفريق"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"></circle><path d="M3.5 19v-1a5.5 5.5 0 0 1 11 0v1zM16 5.5a3 3 0 0 1 0 5.8M17 14a4 4 0 0 1 3.5 4v1"></path></svg></span><span class="nav-text">إدارة الفريق</span></button>
+          <button data-page="settings" aria-label="الإعدادات والتخصيص" title="الإعدادات والتخصيص"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 7h8M16 7h4M4 17h4M12 17h8"></path><circle cx="14" cy="7" r="2"></circle><circle cx="10" cy="17" r="2"></circle></svg></span><span class="nav-text">الإعدادات والتخصيص</span></button>
+          <button data-page="audit" aria-label="سجل النشاط" title="سجل النشاط"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3.5 12a8.5 8.5 0 1 0 2.1-5.6L3.5 8.5"></path><path d="M3.5 4.5v4h4M12 7v5l3.5 2"></path></svg></span><span class="nav-text">سجل النشاط</span></button>
+        </section>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="side-profile">
+          <div class="avatar" id="profileAvatar" aria-hidden="true">م</div>
+          <div class="side-profile-copy"><b id="profileName">المستخدم</b><small id="profileRole">مالك مساحة العمل</small></div>
+          <button class="icon-button side-logout" id="logoutBtn" type="button" title="تسجيل الخروج" aria-label="تسجيل الخروج"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 5H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h5M14 16l4-4-4-4M18 12H9"></path></svg></button>
+        </div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <button class="menu-btn" id="menuBtn" aria-label="فتح القائمة" aria-controls="sidebar" aria-expanded="false" type="button"><svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"></path></svg></button>
+        <div class="heading"><div class="breadcrumb"><span>M</span><span>/</span><span id="topTitle">لوحة التحكم</span></div><h1 id="topTitleHidden" class="hidden">لوحة التحكم</h1><p id="topSubtitle">صورة واضحة عن أعمالك الرقمية</p></div>
+        <div class="grow"></div>
+        <button class="topbar-action" type="button" data-page="studio" aria-label="إنشاء محتوى"><span>＋</span> إنشاء محتوى</button>
+        <div class="account-menu-wrap">
+          <button class="user-pill" id="accountMenuBtn" type="button" aria-expanded="false" aria-controls="accountMenu">
+            <div class="avatar" id="topAvatar">م</div><span class="user-pill-copy"><b id="topUser">المستخدم</b><small id="topUserRole">مالك مساحة العمل</small></span><span class="user-pill-chevron">⌄</span>
+          </button>
+          <div class="account-menu hidden" id="accountMenu" role="menu">
+            <button type="button" id="installAppBtn" role="menuitem"><span aria-hidden="true">⇩</span> تثبيت M على الجهاز</button>
+            <button type="button" id="accountSettingsBtn" role="menuitem"><span>⚙</span> الحساب والإعدادات</button>
+            <button type="button" id="accountLogoutBtn" class="account-menu-danger" role="menuitem"><span>↪</span> تسجيل الخروج</button>
+          </div>
+        </div>
+      </header>
+      <div class="content" id="pageContent" aria-live="polite"></div>
+      <footer class="footer-note"><span>M</span> <span>·</span> الإصدار 0.20.0 <span>·</span> Digital Business Management</footer>
+    </main>
+  </div>
+  <div id="modalRoot"></div>
+  <div id="toastRoot" aria-live="polite"></div>
+  <script src="/settings-enhanced.js?v=0.20.0" defer></script>
+  <script src="/app.js?v=0.20.0" defer></script>
+  <script src="/command-center.js?v=0.20.0" defer></script>
+</body>
+</html>

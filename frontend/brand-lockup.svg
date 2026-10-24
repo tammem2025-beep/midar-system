@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 780 150" role="img" aria-label="M — Digital Business Management">
+  <defs><linearGradient id="g" x1="10" y1="20" x2="125" y2="125" gradientUnits="userSpaceOnUse"><stop stop-color="#06C6DE"/><stop offset=".5" stop-color="#5366FF"/><stop offset="1" stop-color="#8B3FF2"/></linearGradient></defs>
+  <path d="M20 122V48C20 25 40 15 55 36L78 70L101 36C116 15 136 25 136 48V122" fill="none" stroke="url(#g)" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="170" y="76" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="58" font-weight="800" fill="#F4F7FF">M</text>
+  <text x="250" y="59" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="25" font-weight="600" fill="#F4F7FF">Digital Business</text>
+  <text x="250" y="91" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="25" font-weight="600" fill="#F4F7FF">Management</text>
+  <text x="250" y="126" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="15" letter-spacing="2.1" fill="#A7B7D3">MANAGE. CONNECT. GROW.</text>
+</svg>

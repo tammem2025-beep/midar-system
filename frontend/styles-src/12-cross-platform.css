@@ -1,0 +1,77 @@
+/* مِدار 0.18.0 — platform-safe responsive behavior for desktop, Android and iOS browsers. */
+:root {
+  --midar-target-size: 44px;
+  --midar-safe-top: env(safe-area-inset-top, 0px);
+  --midar-safe-right: env(safe-area-inset-right, 0px);
+  --midar-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --midar-safe-left: env(safe-area-inset-left, 0px);
+}
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+body { min-width: 320px; min-height: 100vh; min-height: 100dvh; }
+button, a, input, select, textarea { touch-action: manipulation; }
+img, video, canvas, svg { max-width: 100%; }
+.sidebar-navigation, .table-wrap, .cm-calendar-frame, .modal { -webkit-overflow-scrolling: touch; }
+.sidebar-navigation { scrollbar-gutter: stable; }
+.mobile-nav-open { overflow: hidden; overscroll-behavior: none; }
+.modal { max-height: calc(100vh - 32px); max-height: calc(100dvh - 32px); overflow-y: auto; overscroll-behavior: contain; }
+:where(button, a, input, select, textarea, [tabindex]):focus-visible { scroll-margin-block: 12px; }
+
+@media (max-width: 760px) {
+  .sidebar {
+    padding-top: max(16px, var(--midar-safe-top));
+    padding-bottom: max(12px, var(--midar-safe-bottom));
+  }
+  .sidebar-navigation { padding-bottom: max(10px, var(--midar-safe-bottom)); overscroll-behavior: contain; }
+  .topbar {
+    padding-inline-start: max(10px, var(--midar-safe-right));
+    padding-inline-end: max(10px, var(--midar-safe-left));
+  }
+  .content {
+    padding-inline-start: max(10px, var(--midar-safe-right));
+    padding-inline-end: max(10px, var(--midar-safe-left));
+  }
+  .menu-btn, .topbar-action, .user-pill, .btn, .cm-nav-button, .cm-today-button, .cm-view-switch button { min-height: var(--midar-target-size); }
+  .field input, .field select, .field textarea, .field-input, .cm-search input, .cm-filters select {
+    min-height: var(--midar-target-size);
+    font-size: 16px !important;
+  }
+  .field textarea { min-height: 104px; }
+  .table-wrap, .cm-calendar-frame { max-width: 100%; overscroll-behavior-x: contain; }
+  .modal {
+    max-height: calc(100dvh - var(--midar-safe-top) - var(--midar-safe-bottom) - 24px);
+    margin-block-start: max(12px, var(--midar-safe-top));
+    margin-block-end: max(12px, var(--midar-safe-bottom));
+  }
+  .toast {
+    bottom: max(18px, var(--midar-safe-bottom));
+    left: max(12px, var(--midar-safe-left));
+    max-width: calc(100vw - 24px);
+  }
+  .account-menu { padding-bottom: max(7px, var(--midar-safe-bottom)); }
+}
+@media (max-width: 390px) {
+  .topbar { gap: 6px; }
+  .heading { flex: 1 1 56px; min-width: 0; }
+  .heading h1 { font-size: 15px; }
+  .topbar-action { flex: 0 0 44px; width: 44px; padding: 0; justify-content: center; gap: 0; overflow: hidden; font-size: 0; }
+  .topbar-action > span { font-size: 20px; line-height: 1; }
+  .user-pill { width: 42px; padding-inline: 4px; justify-content: center; }
+  .user-pill-copy, .user-pill-chevron { display: none !important; }
+  .dc-metric { min-width: 0; }
+  .dc-metric-main strong { font-size: clamp(20px, 6vw, 24px); }
+}
+@media (max-height: 640px) and (max-width: 760px) {
+  .sidebar { padding-block: max(8px, var(--midar-safe-top)) max(8px, var(--midar-safe-bottom)); }
+  .sidebar-topbar { margin-bottom: 8px; }
+  .workspace-card { margin-bottom: 8px; padding-block: 7px; }
+  .sidebar-navigation { gap: 9px; padding-bottom: 8px; }
+  .nav button { min-height: 40px; }
+  .sidebar-footer { margin-top: 3px; padding-top: 6px; }
+}
+@media (hover: none) and (pointer: coarse) {
+  .nav button, .quick button, .btn, .topbar-action, .menu-btn, .user-pill { -webkit-tap-highlight-color: transparent; }
+  .nav button:hover:not(.active), .quick button:hover, .btn:hover { box-shadow: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mobile-overlay, .sidebar, .main, .account-menu { transition: none !important; }
+}

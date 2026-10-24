@@ -1,0 +1,25 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Local secrets and databases
+.env
+.env.*.local
+*.db
+*.sqlite
+*.sqlite3
+*.sqlite-*
+data/*
+!data/.gitkeep
+
+# Runtime logs and local artifacts
+*.log
+*.pid
+.DS_Store
+Thumbs.db
