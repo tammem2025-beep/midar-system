@@ -10,7 +10,7 @@
 
 ## Facebook وInstagram
 
-أنشئ تطبيقًا في Meta for Developers وفعّل منتجات تسجيل الدخول وGraph API اللازمة. سجّل Redirect URI التالي في قائمة OAuth Redirect URIs المسموح بها:
+أنشئ تطبيقًا في Meta for Developers وفعّل منتجات تسجيل الدخول وGraph API اللازمة. اطلب صلاحيات القراءة `pages_show_list` و`pages_read_engagement` و`pages_read_user_content` و`instagram_basic` حسب متطلبات مراجعة Meta. سجّل Redirect URI التالي في قائمة OAuth Redirect URIs المسموح بها:
 
 `http://127.0.0.1:8000/api/v1/integrations/meta/callback`
 
