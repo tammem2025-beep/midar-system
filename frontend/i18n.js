@@ -246,11 +246,9 @@
   "حدث خطأ داخلي. يرجى تزويد الدعم بمعرّف الطلب.": "An internal error occurred. Provide support with the request ID.",
   "محاولات دخول كثيرة. حاول بعد": "Too many sign-in attempts. Try again after"
 };
-  const reverseMessages = Object.create(null);
-  for (const [source, target] of Object.entries(messages)) {
-    if (!(target in reverseMessages)) reverseMessages[target] = source;
-  }
-  const ignoredTextParents = 'script, style, code, pre, textarea, input, select option, [contenteditable="true"], [data-user-content], td b, .dc-recent-copy b, .dc-task-text b, .studio-preview-copy b, .media-user-title';
+  const ignoredTextParents = 'script, style, code, pre, textarea, input, [contenteditable="true"], [data-user-content], td b, .dc-recent-copy b, .dc-task-text b, .studio-preview-copy b, .media-user-title';
+  const originalText = new WeakMap();
+  const originalAttributes = new WeakMap();
   let language = 'ar';
   let observer;
   try { language = localStorage.getItem('m.language') === 'en' ? 'en' : 'ar'; } catch (_) {}
@@ -258,23 +256,43 @@
   function translateTextNode(node) {
     const parent = node.parentElement;
     if (!parent || parent.closest(ignoredTextParents)) return;
-    const original = node.nodeValue || '';
-    const trimmed = original.trim();
-    if (!trimmed) return;
-    const dictionary = language === 'en' ? messages : reverseMessages;
-    const replacement = dictionary[trimmed];
-    if (replacement && replacement !== trimmed) {
-      const start = original.indexOf(trimmed);
-      node.nodeValue = original.slice(0, start) + replacement + original.slice(start + trimmed.length);
+    const current = node.nodeValue || '';
+    let state = originalText.get(node);
+    if (!state) {
+      state = { source: current, rendered: null };
+      originalText.set(node, state);
+    } else if (state.rendered !== null && current !== state.rendered) {
+      state.source = current;
     }
+    const source = state.source;
+    const trimmed = source.trim();
+    if (!trimmed) return;
+    const replacement = language === 'en' ? (messages[trimmed] || trimmed) : trimmed;
+    const start = source.indexOf(trimmed);
+    const rendered = source.slice(0, start) + replacement + source.slice(start + trimmed.length);
+    state.rendered = rendered;
+    if (rendered !== current) node.nodeValue = rendered;
   }
 
   function translateAttribute(element, name) {
-    const value = element.getAttribute(name);
-    if (!value) return;
-    const dictionary = language === 'en' ? messages : reverseMessages;
-    const translated = dictionary[value.trim()];
-    if (translated && translated !== value) element.setAttribute(name, translated);
+    const current = element.getAttribute(name);
+    if (!current) return;
+    let attrMap = originalAttributes.get(element);
+    if (!attrMap) {
+      attrMap = new Map();
+      originalAttributes.set(element, attrMap);
+    }
+    let state = attrMap.get(name);
+    if (!state) {
+      state = { source: current, rendered: null };
+      attrMap.set(name, state);
+    } else if (state.rendered !== null && current !== state.rendered) {
+      state.source = current;
+    }
+    const source = state.source;
+    const translated = language === 'en' ? (messages[source.trim()] || source) : source;
+    state.rendered = translated;
+    if (translated !== current) element.setAttribute(name, translated);
   }
 
   function translateTree(root) {
@@ -324,7 +342,7 @@
     get language() { return language; },
     setLanguage,
     toggle() { setLanguage(language === 'ar' ? 'en' : 'ar'); },
-    t(value) { return (language === 'en' ? messages[value] : reverseMessages[value]) || value; },
+    t(value) { return language === 'en' ? (messages[value] || value) : value,
   };
 
   setLanguage(language, false);
