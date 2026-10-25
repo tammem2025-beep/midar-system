@@ -44,3 +44,20 @@ async def verify_business_number(config):
         "verified_name": payload.get("verified_name"),
         "quality_rating": payload.get("quality_rating"),
     }
+
+
+def get_webhook_secrets():
+    verify_token = os.getenv("WHATSAPP_VERIFY_TOKEN", "").strip()
+    app_secret = os.getenv("WHATSAPP_APP_SECRET", os.getenv("META_APP_SECRET", "")).strip()
+    if not verify_token or not app_secret:
+        return None
+    return verify_token, app_secret
+
+
+def verify_webhook_signature(raw_body: bytes, supplied: str, app_secret: str) -> bool:
+    import hmac
+    import hashlib
+    if not raw_body or len(raw_body) > 2 * 1024 * 1024:
+        return False
+    expected = "sha256=" + hmac.new(app_secret.encode("utf-8"), raw_body, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, (supplied or "").strip())
