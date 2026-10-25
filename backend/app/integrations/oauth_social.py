@@ -278,8 +278,8 @@ async def publish_text(provider: str, access_token: str, external_id: str, text:
     if not message:
         raise SocialOAuthError("Post text cannot be empty.")
     if provider == "x":
-        if len(message) > 28000:
-            raise SocialOAuthError("X post text exceeds the supported size.")
+        if len(message) > 280:
+            raise SocialOAuthError("X post text exceeds 280 characters; shorten the post before publishing.")
         url, headers, payload = (
             "https://api.x.com/2/tweets",
             {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json", "Accept": "application/json"},
