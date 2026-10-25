@@ -74,6 +74,30 @@ jobs:
           if (!$installer) { throw "The Windows installer executable was not created." }
           Write-Host "Built installer: $($installer.FullName)"
 
+      - name: Sign installer when a trusted Authenticode certificate is configured
+        shell: pwsh
+        env:
+          WINDOWS_SIGNING_CERT_BASE64: ${{ secrets.WINDOWS_SIGNING_CERT_BASE64 }}
+          WINDOWS_SIGNING_CERT_PASSWORD: ${{ secrets.WINDOWS_SIGNING_CERT_PASSWORD }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_SIGNING_CERT_BASE64) -or [string]::IsNullOrWhiteSpace($env:WINDOWS_SIGNING_CERT_PASSWORD)) {
+            Write-Host "No trusted certificate configured. Installer remains unsigned; SmartScreen warnings may still appear."
+            exit 0
+          }
+          $certPath = Join-Path $env:RUNNER_TEMP "m-signing.pfx"
+          [IO.File]::WriteAllBytes($certPath, [Convert]::FromBase64String($env:WINDOWS_SIGNING_CERT_BASE64))
+          try {
+            $sdk = ${env:ProgramFiles(x86)}
+            $signtool = Get-ChildItem (Join-Path $sdk "Windows Kits\10\bin\*\x64\signtool.exe") -ErrorAction SilentlyContinue | Sort-Object FullName -Descending | Select-Object -First 1
+            if (!$signtool) { throw "SignTool was not found on the Windows runner." }
+            $installer = Get-ChildItem "installer\output\M-Setup-*-Windows-x64.exe" | Select-Object -First 1
+            if (!$installer) { throw "Installer EXE was not found." }
+            & $signtool.FullName sign /fd SHA256 /f $certPath /p $env:WINDOWS_SIGNING_CERT_PASSWORD /tr "http://timestamp.digicert.com" /td SHA256 $installer.FullName
+            if ($LASTEXITCODE -ne 0) { throw "Authenticode signing failed." }
+            & $signtool.FullName verify /pa /all $installer.FullName
+            if ($LASTEXITCODE -ne 0) { throw "Authenticode signature verification failed." }
+          } finally { Remove-Item -LiteralPath $certPath -Force -ErrorAction SilentlyContinue }
+
       - name: Upload Windows installer artifact
         uses: actions/upload-artifact@v4
         with:
@@ -86,9 +110,9 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v') || (github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[publish-release]'))
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'v0.22.0' }}
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'v0.23.0' }}
           target_commitish: ${{ github.sha }}
-          name: M 0.22.0 — Windows x64
+          name: M 0.23.0 — Windows x64
           files: installer/output/M-Setup-*-Windows-x64.exe
           generate_release_notes: true
           fail_on_unmatched_files: true
