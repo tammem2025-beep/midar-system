@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import timedelta
+import base64
 import os
 import re
 from urllib.parse import urlencode, urlparse
@@ -114,7 +115,7 @@ def get_social_oauth_config(provider: str) -> SocialOAuthConfig | None:
         provider=key, client_id=client_id, client_secret=client_secret,
         redirect_uri=redirect_uri, authorization_endpoint=definition["authorization_endpoint"],
         token_endpoint=definition["token_endpoint"], scopes=definition["scopes"],
-        pkce=bool(definition["pkce"]),
+        pkce=bool(definition["pkce"]) and not (key == "tiktok" and urlparse(redirect_uri).scheme == "https"),
     )
 
 
@@ -130,7 +131,11 @@ def make_social_authorization_url(config: SocialOAuthConfig, state: str, code_ch
     else:
         params["client_id"] = config.client_id
     if config.pkce:
-        params["code_challenge"] = code_challenge
+        challenge = code_challenge
+        if config.provider == "tiktok":
+            padding = "=" * ((4 - len(challenge) % 4) % 4)
+            challenge = base64.urlsafe_b64decode(challenge + padding).hex()
+        params["code_challenge"] = challenge
         params["code_challenge_method"] = "S256"
     if config.provider == "youtube":
         params.update({"access_type": "offline", "include_granted_scopes": "true", "prompt": "consent"})
