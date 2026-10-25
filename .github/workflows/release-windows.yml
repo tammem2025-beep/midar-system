@@ -114,6 +114,7 @@ jobs:
           target_commitish: ${{ github.sha }}
           name: M 0.23.0 — Windows x64
           files: installer/output/M-Setup-*-Windows-x64.exe
+          overwrite_files: true
           generate_release_notes: true
           fail_on_unmatched_files: true
         env:
