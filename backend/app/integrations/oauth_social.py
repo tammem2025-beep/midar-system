@@ -329,3 +329,165 @@ async def publish_text(provider: str, access_token: str, external_id: str, text:
     if not remote_id:
         raise SocialDeliveryUnknown(f"{provider} did not confirm a post ID; verify the destination before retrying.")
     return {"id": str(remote_id)}
+
+
+async def fetch_recent_content(
+    provider: str, access_token: str, external_id: str, *, scopes: tuple[str, ...], limit: int = 30,
+) -> list[dict[str, str | None]]:
+    """Fetch real recent feed items only when the connected account granted the needed read scope."""
+    provider = (provider or "").casefold()
+    bounded_limit = max(1, min(int(limit), 50))
+    if provider == "x":
+        required = "tweet.read"
+        if required not in scopes:
+            raise SocialOAuthError("X لم يمنح صلاحية tweet.read لهذا الحساب؛ أعد التفويض بالصلاحية إن كانت متاحة.")
+        params = {
+            "max_results": str(max(5, min(bounded_limit, 100))),
+            "tweet.fields": "id,text,created_at,public_metrics,attachments",
+            "expansions": "attachments.media_keys",
+            "media.fields": "media_key,type,url,preview_image_url,alt_text",
+        }
+        url = f"https://api.x.com/2/users/{external_id}/tweets"
+        headers = {"Authorization": f"Bearer {access_token}", "Accept": "application/json"}
+        try:
+            async with httpx.AsyncClient(timeout=TIMEOUT, follow_redirects=False) as client:
+                response = await client.get(url, params=params, headers=headers)
+            payload = await _json_response(response, provider="X", operation="feed lookup")
+        except SocialOAuthError:
+            raise
+        except httpx.HTTPError as exc:
+            raise SocialOAuthError("تعذر جلب منشورات X من الواجهة الرسمية.") from exc
+        includes = payload.get("includes") if isinstance(payload.get("includes"), dict) else {}
+        media_by_key = {
+            item.get("media_key"): item for item in includes.get("media", [])
+            if isinstance(item, dict) and item.get("media_key")
+        } if isinstance(includes.get("media"), list) else {}
+        items = []
+        for item in payload.get("data", []) if isinstance(payload.get("data"), list) else []:
+            if not isinstance(item, dict) or not item.get("id"):
+                continue
+            attachments = item.get("attachments") if isinstance(item.get("attachments"), dict) else {}
+            keys = attachments.get("media_keys") if isinstance(attachments.get("media_keys"), list) else []
+            remote_media = next((media_by_key.get(key) for key in keys if media_by_key.get(key)), {})
+            mtype = str(remote_media.get("type") or "TEXT").upper()
+            media_url = remote_media.get("url") or remote_media.get("preview_image_url")
+            items.append({
+                "id": str(item["id"]), "caption": str(item.get("text") or ""),
+                "media_type": "VIDEO" if "video" in mtype else "IMAGE" if "photo" in mtype else "TEXT",
+                "media_url": media_url if isinstance(media_url, str) else None,
+                "thumbnail_url": remote_media.get("preview_image_url") if isinstance(remote_media.get("preview_image_url"), str) else media_url if isinstance(media_url, str) else None,
+                "permalink": f"https://x.com/i/web/status/{item['id']}",
+                "timestamp": item.get("created_at") if isinstance(item.get("created_at"), str) else None,
+                "platform": "X",
+            })
+        return items[:bounded_limit]
+
+    if provider == "tiktok":
+        if "video.list" not in scopes:
+            raise SocialOAuthError("TikTok لم يمنح صلاحية video.list لهذا الحساب.")
+        fields = "id,title,video_description,create_time,cover_image_url,share_url,video_duration,view_count,like_count,comment_count,share_count"
+        url = f"https://open.tiktokapis.com/v2/video/list/?fields={fields}"
+        try:
+            async with httpx.AsyncClient(timeout=TIMEOUT, follow_redirects=False) as client:
+                response = await client.post(
+                    url, json={"max_count": bounded_limit},
+                    headers={"Authorization": f"Bearer {access_token}", "Content-Type": "application/json", "Accept": "application/json"},
+                )
+            payload = await _json_response(response, provider="TikTok", operation="feed lookup")
+        except SocialOAuthError:
+            raise
+        except httpx.HTTPError as exc:
+            raise SocialOAuthError("تعذر جلب فيديوهات TikTok من الواجهة الرسمية.") from exc
+        data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+        videos = data.get("videos") if isinstance(data.get("videos"), list) else []
+        items = []
+        for item in videos:
+            if not isinstance(item, dict) or not item.get("id"):
+                continue
+            video_id = str(item["id"])
+            cover = item.get("cover_image_url")
+            items.append({
+                "id": video_id,
+                "caption": str(item.get("title") or item.get("video_description") or ""),
+                "media_type": "VIDEO",
+                "media_url": item.get("share_url") if isinstance(item.get("share_url"), str) else None,
+                "thumbnail_url": cover if isinstance(cover, str) else None,
+                "permalink": item.get("share_url") if isinstance(item.get("share_url"), str) else f"https://www.tiktok.com/video/{video_id}",
+                "timestamp": None,
+                "platform": "TikTok",
+            })
+        return items
+
+    if provider == "youtube":
+        required = "https://www.googleapis.com/auth/youtube.readonly"
+        if required not in scopes:
+            raise SocialOAuthError("YouTube لم يمنح صلاحية youtube.readonly لهذا الحساب.")
+        headers = {"Authorization": f"Bearer {access_token}", "Accept": "application/json"}
+        try:
+            async with httpx.AsyncClient(timeout=TIMEOUT, follow_redirects=False) as client:
+                channel_response = await client.get(
+                    "https://www.googleapis.com/youtube/v3/channels",
+                    params={"part": "contentDetails", "id": external_id},
+                    headers=headers,
+                )
+                channel_payload = await _json_response(channel_response, provider="YouTube", operation="channel lookup")
+                channels = channel_payload.get("items")
+                channel = channels[0] if isinstance(channels, list) and channels and isinstance(channels[0], dict) else {}
+                content_details = channel.get("contentDetails") if isinstance(channel.get("contentDetails"), dict) else {}
+                related = content_details.get("relatedPlaylists") if isinstance(content_details.get("relatedPlaylists"), dict) else {}
+                uploads_id = related.get("uploads")
+                if not uploads_id:
+                    return []
+                playlist_response = await client.get(
+                    "https://www.googleapis.com/youtube/v3/playlistItems",
+                    params={"part": "snippet,contentDetails", "playlistId": str(uploads_id), "maxResults": bounded_limit},
+                    headers=headers,
+                )
+                playlist_payload = await _json_response(playlist_response, provider="YouTube", operation="playlist lookup")
+                playlist_items = playlist_payload.get("items") if isinstance(playlist_payload.get("items"), list) else []
+                video_ids = []
+                snippets = {}
+                for row in playlist_items:
+                    if not isinstance(row, dict):
+                        continue
+                    details = row.get("contentDetails") if isinstance(row.get("contentDetails"), dict) else {}
+                    snippet = row.get("snippet") if isinstance(row.get("snippet"), dict) else {}
+                    resource = snippet.get("resourceId") if isinstance(snippet.get("resourceId"), dict) else {}
+                    video_id = str(details.get("videoId") or resource.get("videoId") or "")
+                    if video_id:
+                        video_ids.append(video_id)
+                        snippets[video_id] = snippet
+                video_payload = {}
+                if video_ids:
+                    video_response = await client.get(
+                        "https://www.googleapis.com/youtube/v3/videos",
+                        params={"part": "snippet,contentDetails,statistics", "id": ",".join(video_ids)},
+                        headers=headers,
+                    )
+                    video_payload = await _json_response(video_response, provider="YouTube", operation="video lookup")
+        except SocialOAuthError:
+            raise
+        except httpx.HTTPError as exc:
+            raise SocialOAuthError("تعذر جلب فيديوهات YouTube من الواجهة الرسمية.") from exc
+        items = []
+        for item in video_payload.get("items", []) if isinstance(video_payload.get("items"), list) else []:
+            if not isinstance(item, dict) or not item.get("id"):
+                continue
+            snippet = item.get("snippet") if isinstance(item.get("snippet"), dict) else snippets.get(str(item["id"]), {})
+            thumbs = snippet.get("thumbnails") if isinstance(snippet.get("thumbnails"), dict) else {}
+            thumb = (thumbs.get("high") or thumbs.get("medium") or thumbs.get("default") or {})
+            thumb_url = thumb.get("url") if isinstance(thumb, dict) else None
+            video_id = str(item["id"])
+            items.append({
+                "id": video_id, "caption": str(snippet.get("title") or ""),
+                "media_type": "VIDEO",
+                "media_url": f"https://www.youtube.com/watch?v={video_id}",
+                "thumbnail_url": thumb_url if isinstance(thumb_url, str) else None,
+                "permalink": f"https://www.youtube.com/watch?v={video_id}",
+                "timestamp": snippet.get("publishedAt") if isinstance(snippet.get("publishedAt"), str) else None,
+                "platform": "YouTube",
+            })
+        items.sort(key=lambda row: row.get("timestamp") or "", reverse=True)
+        return items[:bounded_limit]
+
+    raise SocialOAuthError("قراءة المحتوى غير منفذة لهذه المنصة في هذا الإصدار.")
