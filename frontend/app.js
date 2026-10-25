@@ -537,28 +537,28 @@ async function performLogout() {
   token = '';
   currentUser = null;
   sessionStorage.removeItem('midar_token');
-  if ($('#accountMenu')) $('#accountMenu').classList.add('hidden');
+  if ($('#accountMenu')) { $('#accountMenu').classList.add('hidden'); $('#accountMenuBtn')?.setAttribute('aria-expanded','false'); }
   showAuth(false);
   if (logoutButton) logoutButton.disabled = false;
   if (accountButton) accountButton.disabled = false;
 }
 
 function initAccountMenu() {
-  const trigger = $('#accountMenuBtn');
-  const menu = $('#accountMenu');
-  if (!trigger || !menu || trigger.dataset.initialized === 'true') return;
-  trigger.dataset.initialized = 'true';
-  trigger.addEventListener('click', () => {
-    const opening = menu.classList.contains('hidden');
-    menu.classList.toggle('hidden', !opening);
-    trigger.setAttribute('aria-expanded', opening ? 'true' : 'false');
+  const trigger=$('#accountMenuBtn');const menu=$('#accountMenu');
+  if(!trigger||!menu||trigger.dataset.initialized==='true')return;
+  trigger.dataset.initialized='true';
+  const items=()=>[...menu.querySelectorAll('[role="menuitem"]:not([disabled]):not(.hidden)')];
+  const closeMenu=(restoreFocus=false)=>{menu.classList.add('hidden');trigger.setAttribute('aria-expanded','false');if(restoreFocus)trigger.focus()};
+  const openMenu=(last=false)=>{menu.classList.remove('hidden');trigger.setAttribute('aria-expanded','true');const controls=items();(last?controls[controls.length-1]:controls[0])?.focus()};
+  trigger.addEventListener('click',()=>{menu.classList.contains('hidden')?openMenu(false):closeMenu(false)});
+  trigger.addEventListener('keydown',event=>{if(event.key!=='ArrowDown'&&event.key!=='ArrowUp')return;event.preventDefault();openMenu(event.key==='ArrowUp')});
+  menu.addEventListener('keydown',event=>{const controls=items();if(!controls.length)return;const current=controls.indexOf(document.activeElement);
+    if(event.key==='Escape'){event.preventDefault();closeMenu(true)}
+    else if(event.key==='ArrowDown'||event.key==='ArrowUp'){event.preventDefault();const d=event.key==='ArrowDown'?1:-1;controls[(current+d+controls.length)%controls.length].focus()}
+    else if(event.key==='Home'){event.preventDefault();controls[0].focus()}
+    else if(event.key==='End'){event.preventDefault();controls[controls.length-1].focus()}
   });
-  document.addEventListener('click', event => {
-    if (!event.target.closest('.account-menu-wrap')) {
-      menu.classList.add('hidden');
-      trigger.setAttribute('aria-expanded', 'false');
-    }
-  });
+  document.addEventListener('click',event=>{if(!event.target.closest('.account-menu-wrap'))closeMenu(false)});
   const logoutButton = $('#accountLogoutBtn');
   if (logoutButton) logoutButton.addEventListener('click', performLogout);
   const installButton = $('#installAppBtn');
@@ -570,7 +570,7 @@ function initAccountMenu() {
     window.addEventListener('beforeinstallprompt', event => { event.preventDefault(); deferredInstallPrompt = event; updateInstallVisibility(); });
     window.addEventListener('appinstalled', () => { deferredInstallPrompt = null; installButton.classList.add('hidden'); toast('تم تثبيت M على هذا الجهاز'); });
     installButton.addEventListener('click', async () => {
-      menu.classList.add('hidden'); trigger.setAttribute('aria-expanded', 'false');
+      closeMenu(false);
       if (isInstalled()) { installButton.classList.add('hidden'); return; }
       if (deferredInstallPrompt) {
         const promptEvent = deferredInstallPrompt; deferredInstallPrompt = null;
