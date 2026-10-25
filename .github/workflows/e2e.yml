@@ -1,0 +1,67 @@
+name: M browser and visual checks
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  chromium-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      APP_ENV: development
+      SECRET_KEY: m-e2e-test-secret-key-0123456789abcdef0123456789abcdef
+      DATABASE_URL: sqlite:////tmp/m-e2e.sqlite
+      MEDIA_DIR: /tmp/m-e2e-media
+      TOKEN_TTL_SECONDS: "3600"
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        run: python -m pip install -r backend/requirements.txt
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install browser-test dependencies
+        run: |
+          npm install --no-audit --no-fund
+          npx playwright install --with-deps chromium
+
+      - name: Start isolated M API server
+        working-directory: backend
+        run: |
+          nohup python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 > /tmp/m-e2e-server.log 2>&1 &
+          echo $! > /tmp/m-e2e-server.pid
+          for i in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:8000/api/v1/health > /dev/null; then
+              echo "M API ready"
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/m-e2e-server.log
+          exit 1
+
+      - name: Run Chromium end-to-end tests
+        run: npm run test:e2e
+
+      - name: Upload browser screenshots and traces
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: M-Visual-Evidence
+          path: test-results/
+          if-no-files-found: warn
+          retention-days: 14

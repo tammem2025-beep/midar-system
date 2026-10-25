@@ -1,3 +1,5 @@
+param([switch]$LAN)
+
 $ErrorActionPreference = "Stop"
 $projectRoot = $PSScriptRoot
 Set-Location $projectRoot
@@ -60,10 +62,26 @@ if ($createdVenv) {
     }
 }
 
-Write-Host "Starting M - Digital Business Management at http://127.0.0.1:8000" -ForegroundColor Green
+$HostAddress = if ($LAN) { "0.0.0.0" } else { "127.0.0.1" }
+if ($LAN) {
+    Write-Host "LAN PREVIEW: only use on a trusted private Wi-Fi network. This is HTTP, not encrypted HTTPS." -ForegroundColor Yellow
+    Write-Host "On this PC: http://127.0.0.1:8000" -ForegroundColor Green
+    $LanAddresses = @(Get-NetIPAddress -AddressFamily IPv4 -AddressState Preferred -ErrorAction SilentlyContinue |
+        Where-Object { $_.IPAddress -notlike "127.*" -and $_.IPAddress -notlike "169.254.*" -and $_.InterfaceAlias -notmatch "Loopback" } |
+        Select-Object -ExpandProperty IPAddress -Unique)
+    if ($LanAddresses.Count -gt 0) {
+        Write-Host "On another device connected to the same Wi-Fi, try:" -ForegroundColor Cyan
+        $LanAddresses | ForEach-Object { Write-Host ("  http://" + $_ + ":8000") -ForegroundColor Cyan }
+    } else {
+        Write-Host "Could not detect a LAN IPv4 address. Check Windows network settings." -ForegroundColor Yellow
+    }
+    Write-Host "Do not use LAN preview for public networks or sensitive real data." -ForegroundColor Yellow
+} else {
+    Write-Host "Starting M - Digital Business Management at http://127.0.0.1:8000" -ForegroundColor Green
+}
 Push-Location (Join-Path $projectRoot "backend")
 try {
-    & $venvPython -m uvicorn app.main:app --reload --port 8000 --env-file (Join-Path $projectRoot ".env")
+    & $venvPython -m uvicorn app.main:app --reload --host $HostAddress --port 8000 --env-file (Join-Path $projectRoot ".env")
     if ($LASTEXITCODE -ne 0) { throw "M server stopped with an error." }
 } finally {
     Pop-Location

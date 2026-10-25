@@ -1,4 +1,4 @@
-/* M 0.21.1 — single-letter brand lockup refinement.
+/* M 0.22.0 — single-letter brand lockup refinement.
    Keep this module last: brand tokens, compact shell, shared components, and theme bridge. */
 :root {
   --m-brand-navy: #0B1020;
@@ -556,7 +556,7 @@ textarea:focus-visible {
 :root[data-theme="light"] .auth-card h2 { color: var(--md-text); }
 
 
-/* M 0.21.1 — refined brand presentation, form hierarchy, and keyboard accessibility. */
+/* M 0.22.0 — refined brand presentation, form hierarchy, and keyboard accessibility. */
 .auth-page {
   min-height: 100vh;
   min-height: 100svh;
@@ -737,3 +737,53 @@ textarea:focus-visible {
   .nav button, .btn, .topbar-action, .user-pill, .icon-button { transition: none !important; }
   .auth-submit:hover { transform: none; }
 }
+
+
+/* M 0.22.0 — bilingual shell, LTR structure, and low-friction controls. */
+.auth-card { padding-top: clamp(46px, 6vw, 58px); }
+.auth-language-toggle {
+  position: absolute;
+  inset-block-start: 14px;
+  inset-inline-end: 15px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 32px;
+  padding: 6px 10px;
+  border: 1px solid var(--md-border);
+  border-radius: 999px;
+  background: var(--md-surface);
+  color: var(--md-text-muted);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.auth-language-toggle:hover,
+#languageToggleBtn:hover { border-color: var(--md-accent); color: var(--md-text); }
+#languageToggleBtn { gap: 8px; }
+#languageToggleBtn > span:first-child,
+.auth-language-toggle > span:first-child { color: var(--md-accent); font-weight: 800; }
+:root[dir="ltr"] body { direction: ltr; }
+:root[dir="ltr"] .sidebar,
+:root[dir="ltr"] .sidebar .nav,
+:root[dir="ltr"] .settings-nav-v2 { text-align: left; }
+:root[dir="ltr"] .sidebar .nav button { text-align: left; }
+:root[dir="ltr"] .sidebar .nav button.active { box-shadow: inset -3px 0 0 var(--md-accent), 0 5px 18px color-mix(in srgb, var(--md-accent) 8%, transparent); }
+:root[dir="ltr"] .sidebar .nav button.active::before { inset-inline-start: auto; inset-inline-end: 0; }
+:root[dir="ltr"] .dashboard-v2,
+:root[dir="ltr"] .settings-layout-v2,
+:root[dir="ltr"] .settings-panel-v2,
+:root[dir="ltr"] .page-head,
+:root[dir="ltr"] .table-wrap { direction: ltr; }
+:root[dir="ltr"] .dc-dashboard-footer,
+:root[dir="ltr"] .dc-panel-head,
+:root[dir="ltr"] .dc-header,
+:root[dir="ltr"] .settings-panel-heading { direction: ltr; }
+:root[dir="ltr"] .dc-task-text,
+:root[dir="ltr"] .dc-recent-copy,
+:root[dir="ltr"] .dc-attention-copy,
+:root[dir="ltr"] .dc-account-summary { text-align: left; }
+:root[dir="ltr"] .topbar,
+:root[dir="ltr"] .topbar .heading,
+:root[dir="ltr"] .topbar .breadcrumb { direction: ltr; }

@@ -1,0 +1,11 @@
+{
+  "name": "m-ui-e2e",
+  "private": true,
+  "description": "Browser quality checks for M Digital Business Management",
+  "scripts": {
+    "test:e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.56.1"
+  }
+}

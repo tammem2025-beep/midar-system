@@ -32,6 +32,7 @@ jobs:
           node-version: "22"
       - name: Check JavaScript syntax
         run: |
+          node --check frontend/i18n.js
           node --check frontend/app.js
           node --check frontend/settings-enhanced.js
           node --check frontend/command-center.js

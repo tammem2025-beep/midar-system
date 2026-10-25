@@ -1,0 +1,92 @@
+name: M Windows installer
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-installer:
+    runs-on: windows-latest
+    timeout-minutes: 35
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install application and packaging dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r backend/requirements.txt
+          python -m pip install "pyinstaller>=6.10,<7"
+
+      - name: Run automated tests
+        env:
+          APP_ENV: test
+          SECRET_KEY: m-installer-build-test-secret-key-0123456789abcdef
+        run: python -m pytest -q
+
+      - name: Compile Python source
+        run: python -m compileall -q backend desktop_launcher.py
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Check JavaScript syntax
+        run: |
+          node --check frontend/i18n.js
+          node --check frontend/app.js
+          node --check frontend/settings-enhanced.js
+          node --check frontend/command-center.js
+
+      - name: Build desktop application directory
+        shell: pwsh
+        run: |
+          python -m PyInstaller --noconfirm --clean --onedir --windowed --name M --paths backend --collect-submodules app --collect-all uvicorn --collect-all cryptography --collect-all PIL --collect-all sqlalchemy.dialects.sqlite --collect-all email_validator desktop_launcher.py
+          if (!(Test-Path "dist\M\M.exe")) { throw "PyInstaller did not produce dist\M\M.exe" }
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          $programFilesX86 = [Environment]::GetEnvironmentVariable('ProgramFiles(x86)')
+          $iscc = Join-Path $programFilesX86 "Inno Setup 6\ISCC.exe"
+          if (!(Test-Path $iscc)) {
+            choco install innosetup --yes --no-progress
+            $iscc = Join-Path $programFilesX86 "Inno Setup 6\ISCC.exe"
+          }
+          if (!(Test-Path $iscc)) { throw "Inno Setup compiler was not found." }
+          & $iscc "installer\M.iss"
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed with exit code $LASTEXITCODE" }
+          $installer = Get-ChildItem "installer\output\M-Setup-*-Windows-x64.exe" | Select-Object -First 1
+          if (!$installer) { throw "The Windows installer executable was not created." }
+          Write-Host "Built installer: $($installer.FullName)"
+
+      - name: Upload Windows installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: M-Windows-x64-Installer
+          path: installer/output/M-Setup-*-Windows-x64.exe
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Attach installer to GitHub release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: installer/output/M-Setup-*-Windows-x64.exe
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
