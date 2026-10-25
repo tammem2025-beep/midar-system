@@ -48,7 +48,7 @@ try {
     $checksumAsset = $checksumAssets[0]
     $expectedAssetPrefix = "/$Owner/$Repo/releases/download/$releaseTag/"
     foreach ($asset in @($installerAsset, $checksumAsset)) {
-        $assetUri = $null
+        [Uri]$assetUri = $null
         if (-not [Uri]::TryCreate([string]$asset.browser_download_url, [UriKind]::Absolute, [ref]$assetUri) -or
             $assetUri.Scheme -ne 'https' -or $assetUri.Host -ne 'github.com' -or
             -not $assetUri.AbsolutePath.StartsWith($expectedAssetPrefix, [StringComparison]::Ordinal)) {
