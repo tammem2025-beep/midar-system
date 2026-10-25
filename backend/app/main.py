@@ -111,7 +111,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="M API",
     description="M API — Manage. Connect. Grow. يتوفر حاليًا تكامل Telegram محدود للنشر النصي بعد التحقق من القناة.",
-    version="0.21.0",
+    version="0.21.1",
     lifespan=lifespan,
 )
 
