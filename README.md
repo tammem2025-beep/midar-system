@@ -80,6 +80,8 @@
 
 إذا لم يظهر ملف التثبيت ضمن **Assets**، افتح [سير عمل بناء مثبت Windows](https://github.com/tammem2025-beep/midar-system/actions/workflows/release-windows.yml) وتحقق من أن آخر تشغيل انتهى بنتيجة **Success**؛ قد يحتاج النشر إلى اكتمال البناء أولًا.
 
+إذا نجح بناء المثبّت لكن لم تظهر صفحة Release، نزّل الحزمة ZIP من قسم **Artifacts** في أحدث تشغيل لسير العمل أعلاه؛ يكون ملف `M-Setup-0.23.0-Windows-x64.exe` داخلها. وللسماح للـ Release الرسمي بالإنشاء تلقائيًا، تأكد من إعدادات المستودع **Settings → Actions → General → Workflow permissions → Read and write permissions** ثم أعد تشغيل سير العمل.
+
 ## التثبيت على الجوال والكمبيوتر عبر PWA
 
 PWA يثبت واجهة الويب، ولا يحوّلها إلى تطبيق أصلي منشور في متاجر Apple/Google. يلزم عنوان HTTPS يمكن للجهاز الوصول إليه:
