@@ -52,7 +52,7 @@ test('M first-run setup, single create action, bilingual shell, theme and mobile
   await expect(page.locator('.settings-layout-v2')).toBeVisible();
   await page.locator('.settings-nav-v2 [data-settings-tab="appearance"]').click();
   await expect(page.locator('#appearanceForm')).toBeVisible();
-  await page.locator('#appearanceForm input[name="theme_mode"][value="light"]').check();
+  await page.locator('.theme-choice-grid label.settings-choice').nth(1).click();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
   await page.locator('#appearanceForm button[type="submit"]').click();
 
