@@ -193,7 +193,13 @@ async def exchange_and_identify(
                 config.token_endpoint, data=data, auth=auth,
                 headers={"Accept": "application/json"},
             )
-            token_payload = await _json_response(response, provider=config.provider, operation="token exchange")
+            token_response = await _json_response(response, provider=config.provider, operation="token exchange")
+            if config.provider == "tiktok":
+                token_payload = token_response.get("data") if isinstance(token_response.get("data"), dict) else {}
+                if token_response.get("message") not in {None, "success"} or token_payload.get("error_code") not in {None, 0}:
+                    raise SocialOAuthError("TikTok rejected authorization; confirm Login Kit and requested scopes are approved.")
+            else:
+                token_payload = token_response
             access_token = token_payload.get("access_token")
             if not isinstance(access_token, str) or not access_token or len(access_token) > 16384:
                 raise SocialOAuthError(f"{config.provider} did not return a usable access token.")
