@@ -42,7 +42,7 @@ from .integrations.authorization import (AuthorizationTransactionError, cleanup_
 from .integrations.catalog import PROVIDER_REGISTRY, public_provider_catalog
 from .integrations.registry import get_connector
 from .integrations.meta_graph import (META_SCOPES, MetaDeliveryUnknown, MetaGraphError, access_token_for_account, exchange_meta_code, exchange_for_long_lived_token, fetch_account_media, get_meta_config, list_granted_permissions, list_managed_pages, make_meta_authorization_url, publish_page_text as meta_publish_page_text)
-from .integrations.oauth_social import (SocialDeliveryUnknown, SocialOAuthError, exchange_and_identify, get_social_oauth_config, make_social_authorization_url, publish_text as publish_social_text)
+from .integrations.oauth_social import (SocialDeliveryUnknown, SocialOAuthError, exchange_and_identify, fetch_recent_content as fetch_social_recent_content, get_social_oauth_config, make_social_authorization_url, publish_text as publish_social_text)
 from .integrations.credential_store import CredentialScopeError, CredentialStoreError, load_provider_credential, store_provider_credential
 from .security_tokens import TokenVaultError
 
@@ -1770,6 +1770,48 @@ async def social_oauth_callback(
         db.rollback()
         security_logger.exception("social_oauth_connection_unexpected_failure provider=%s organization_id=%s", provider, organization.id)
         return finish("connection_failed")
+
+
+@app.get(f"{API_PREFIX}/integrations/oauth/{{provider}}/accounts/{{account_id}}/media")
+async def social_oauth_account_media(
+    provider: str, account_id: str, limit: int = Query(30, ge=1, le=50),
+    ctx: AuthContext = Depends(get_context), db: Session = Depends(get_db),
+):
+    require_read(ctx, "accounts")
+    provider = (provider or "").casefold()
+    platforms = {"x": "X", "tiktok": "TikTok", "youtube": "YouTube"}
+    if provider not in platforms:
+        raise HTTPException(status_code=404, detail="قراءة المحتوى غير متاحة لهذا المزوّد حاليًا.")
+    account = db.scalar(select(SocialAccount).where(
+        SocialAccount.id == account_id,
+        SocialAccount.organization_id == ctx.organization.id,
+        SocialAccount.platform == platforms[provider],
+        SocialAccount.connection_status == "connected",
+        SocialAccount.provider_account_id.is_not(None),
+    ))
+    if account is None:
+        raise HTTPException(status_code=404, detail="الحساب غير متصل أو غير موجود ضمن مساحة العمل الحالية.")
+    try:
+        credential = load_provider_credential(
+            db, organization_id=ctx.organization.id, social_account_id=account.id,
+        )
+        if credential is None:
+            raise HTTPException(status_code=409, detail="لا توجد بيانات اعتماد لهذا الحساب؛ أعد ربط المنصة.")
+        items = await fetch_social_recent_content(
+            provider, credential.access_token, account.provider_account_id,
+            scopes=credential.scopes, limit=limit,
+        )
+    except HTTPException:
+        raise
+    except (SocialOAuthError, CredentialStoreError, CredentialScopeError, TokenVaultError) as exc:
+        raise HTTPException(status_code=502, detail=str(exc)[:400]) from exc
+    account.last_synced_at = utcnow()
+    audit(db, ctx, f"integration.{provider}_media_read", "social_account", account.id, {"count": len(items)})
+    db.commit()
+    return {
+        "account": {"id": account.id, "platform": account.platform, "account_name": account.account_name, "handle": account.handle},
+        "source": f"{provider}_official_api", "items": items, "fetched_at": utcnow(),
+    }
 
 
 def _meta_binding_cookie_name(state: str) -> str:
