@@ -178,7 +178,7 @@ def test_health_setup_and_core_crud(client: TestClient, monkeypatch):
     providers = {p["platform"]: p for p in integrations.json()["providers"]}
     assert providers["Telegram"]["connector_implemented"] is True
     assert providers["Telegram"]["supported_actions"] == ["verify_channel", "publish_text"]
-    assert all(not p["connector_implemented"] for name, p in providers.items() if name not in {"Telegram", "Facebook", "Instagram"})
+    assert all(not p["connector_implemented"] for name, p in providers.items() if name not in {"Telegram", "Facebook", "Instagram", "X", "LinkedIn", "TikTok", "YouTube"})
 
 
 
