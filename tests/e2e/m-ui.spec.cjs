@@ -47,6 +47,17 @@ test('M first-run setup, single create action, bilingual shell, theme and mobile
   await page.locator('#languageToggleBtn').click();
   await expect(page.locator('html')).toHaveAttribute('lang', 'ar');
   await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+  // Verify keyboard-only operation and focus restoration for the account dropdown.
+  await page.locator('#accountMenuBtn').click();
+  await page.locator('#accountMenuBtn').focus();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#accountMenuBtn')).toHaveAttribute('aria-expanded', 'true');
+  await expect(page.locator('#languageToggleBtn')).toBeFocused();
+  await page.keyboard.press('End');
+  await expect(page.locator('#accountLogoutBtn')).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#accountMenu')).toBeHidden();
+  await expect(page.locator('#accountMenuBtn')).toBeFocused();
 
   await page.locator('#nav [data-page="settings"]').click();
   await expect(page.locator('.settings-layout-v2')).toBeVisible();
