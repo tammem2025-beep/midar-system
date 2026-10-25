@@ -16,12 +16,13 @@
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
   <link rel="shortcut icon" href="/favicon.ico" type="image/x-icon">
   <title>M</title>
-  <link rel="stylesheet" href="/midar-ui.css?v=0.21.1">
+  <link rel="stylesheet" href="/midar-ui.css?v=0.22.0">
 </head>
 <body>
   <a href="#pageContent" class="xp-skip-link">تجاوز إلى المحتوى</a>
   <div id="authScreen" class="auth-page hidden">
     <section class="auth-card" aria-labelledby="authTitle">
+      <button class="auth-language-toggle" type="button" data-language-toggle id="languageToggleAuthBtn" aria-label="Switch language"><span aria-hidden="true">文A</span><span data-language-label>English</span></button>
       <div class="auth-brand">
         <div class="logo" aria-hidden="true"><img class="brand-mark-image" src="/brand-m-mark.svg" alt="" width="52" height="52"></div>
         <div class="brand-copy auth-brand-copy"><small class="brand-tagline">Manage. Connect. Grow.</small></div>
@@ -124,26 +125,26 @@
         <button class="menu-btn" id="menuBtn" aria-label="فتح القائمة" aria-controls="sidebar" aria-expanded="false" type="button"><svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"></path></svg></button>
         <div class="heading"><div class="breadcrumb"><span>M</span><span>/</span><span id="topTitle">لوحة التحكم</span></div><h1 id="topTitleHidden" class="hidden">لوحة التحكم</h1><p id="topSubtitle">صورة واضحة عن أعمالك الرقمية</p></div>
         <div class="grow"></div>
-        <button class="topbar-action" type="button" data-page="studio" aria-label="إنشاء محتوى"><span>＋</span> إنشاء محتوى</button>
+        <button class="topbar-action" type="button" id="globalCreatePostBtn" aria-label="إنشاء منشور"><span aria-hidden="true">＋</span> إنشاء</button>
         <div class="account-menu-wrap">
           <button class="user-pill" id="accountMenuBtn" type="button" aria-expanded="false" aria-controls="accountMenu">
             <div class="avatar" id="topAvatar">م</div><span class="user-pill-copy"><b id="topUser">المستخدم</b><small id="topUserRole">مالك مساحة العمل</small></span><span class="user-pill-chevron">⌄</span>
           </button>
           <div class="account-menu hidden" id="accountMenu" role="menu">
+            <button type="button" id="languageToggleBtn" data-language-toggle role="menuitem" aria-label="Switch language"><span aria-hidden="true">文A</span> <span data-language-label>English</span></button>
             <button type="button" id="installAppBtn" role="menuitem"><span aria-hidden="true">⇩</span> تثبيت M على الجهاز</button>
-            <button type="button" id="accountSettingsBtn" role="menuitem"><span>⚙</span> الحساب والإعدادات</button>
             <button type="button" id="accountLogoutBtn" class="account-menu-danger" role="menuitem"><span>↪</span> تسجيل الخروج</button>
           </div>
         </div>
       </header>
       <div class="content" id="pageContent" aria-live="polite"></div>
-      <footer class="footer-note"><span>M</span> <span>·</span> الإصدار 0.21.1 <span>·</span> Manage. Connect. Grow.</footer>
+      <footer class="footer-note"><span>M</span> <span>·</span> الإصدار 0.22.0 <span>·</span> Manage. Connect. Grow.</footer>
     </main>
   </div>
   <div id="modalRoot"></div>
   <div id="toastRoot" aria-live="polite"></div>
-  <script src="/settings-enhanced.js?v=0.21.1" defer></script>
-  <script src="/app.js?v=0.21.1" defer></script>
-  <script src="/command-center.js?v=0.21.1" defer></script>
+  <script src="/settings-enhanced.js?v=0.22.0" defer></script>
+  <script src="/app.js?v=0.22.0" defer></script>
+  <script src="/command-center.js?v=0.22.0" defer></script>
 </body>
 </html>
