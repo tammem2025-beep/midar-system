@@ -55,6 +55,7 @@ def configure_local_environment() -> tuple[Path, Path, Path]:
                     "GOOGLE_OAUTH_CLIENT_SECRET=",
                     "GOOGLE_OAUTH_REDIRECT_URI=http://127.0.0.1:8000/api/v1/auth/google/callback",
                     "TELEGRAM_BOT_TOKEN=",
+                    "PROVIDER_TOKEN_ENCRYPTION_KEY=",
                     "",
                 ]
             ),
@@ -166,6 +167,12 @@ class MDesktop:
             padx=12, pady=9,
         ).pack(side="left", padx=8)
         tk.Button(
+            buttons, text="Local settings", command=self.open_settings,
+            relief="flat", cursor="hand2", bg="#17243B", fg="#E6EEFF",
+            activebackground="#223452", activeforeground="white",
+            padx=10, pady=9,
+        ).pack(side="left", padx=8)
+        tk.Button(
             buttons, text="Close", command=self.close,
             relief="flat", cursor="hand2", bg="#17243B", fg="#E6EEFF",
             activebackground="#223452", activeforeground="white",
@@ -223,7 +230,7 @@ class MDesktop:
         except Exception:
             logging.exception("M API server stopped unexpectedly")
             if not self.stopping:
-                self.root.after(0, lambda: self.status.set("The server stopped unexpectedly. Review the local log file."))
+                logging.error("Server thread ended while the desktop window was still open.")
 
     def _check_ready(self) -> None:
         if self.stopping:
@@ -261,6 +268,12 @@ class MDesktop:
             os.startfile(str(self.data_dir))  # Windows only
         except Exception as exc:
             messagebox.showerror("Open data folder", str(exc), parent=self.root)
+
+    def open_settings(self) -> None:
+        try:
+            os.startfile(str(self.support_dir / ".env"))  # Opens the local configuration in the default editor.
+        except Exception as exc:
+            messagebox.showerror("Open local settings", str(exc), parent=self.root)
 
     def close(self) -> None:
         if self.stopping:
