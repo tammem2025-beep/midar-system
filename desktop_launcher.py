@@ -54,6 +54,10 @@ def configure_local_environment() -> tuple[Path, Path, Path]:
                     "GOOGLE_OAUTH_CLIENT_ID=",
                     "GOOGLE_OAUTH_CLIENT_SECRET=",
                     "GOOGLE_OAUTH_REDIRECT_URI=http://127.0.0.1:8000/api/v1/auth/google/callback",
+                    "META_APP_ID=",
+                    "META_APP_SECRET=",
+                    "META_REDIRECT_URI=http://127.0.0.1:8000/api/v1/integrations/meta/callback",
+                    "META_GRAPH_API_VERSION=v26.0",
                     "TELEGRAM_BOT_TOKEN=",
                     "PROVIDER_TOKEN_ENCRYPTION_KEY=",
                     "",
@@ -68,6 +72,26 @@ def configure_local_environment() -> tuple[Path, Path, Path]:
         load_dotenv(dotenv_path=env_file, override=False)
     except Exception as exc:
         raise RuntimeError(f"Could not load local settings file: {exc}") from exc
+
+    from cryptography.fernet import Fernet
+    provider_key = os.environ.get("PROVIDER_TOKEN_ENCRYPTION_KEY", "").strip()
+    if not provider_key:
+        provider_key = Fernet.generate_key().decode("ascii")
+        env_text = env_file.read_text(encoding="utf-8")
+        import re
+        key_line = re.compile(r"(?m)^PROVIDER_TOKEN_ENCRYPTION_KEY=.*$")
+        if key_line.search(env_text):
+            env_text = key_line.sub("PROVIDER_TOKEN_ENCRYPTION_KEY=" + provider_key, env_text, count=1)
+        else:
+            env_text += "\nPROVIDER_TOKEN_ENCRYPTION_KEY=" + provider_key + "\n"
+        temporary_env = env_file.with_suffix(".env.tmp")
+        temporary_env.write_text(env_text, encoding="utf-8", newline="\n")
+        temporary_env.replace(env_file)
+        os.environ["PROVIDER_TOKEN_ENCRYPTION_KEY"] = provider_key
+    try:
+        Fernet(provider_key.encode("ascii"))
+    except (ValueError, UnicodeEncodeError):
+        raise RuntimeError("The provider token encryption key in %LOCALAPPDATA%\\M\\.env is invalid. It was not replaced; restore the original key or set a valid Fernet key.")
 
     secret = os.environ.get("SECRET_KEY", "").strip()
     if len(secret) < 32 or secret == "dev-only-change-this-secret-before-any-real-use":

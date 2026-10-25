@@ -2,6 +2,8 @@
 
 ## 1. مثبت Windows
 
+أُضيفت خطوة توقيع اختيارية إلى بناء Windows. لتوقيع المثبّت فعليًا يجب إعداد شهادة Authenticode موثوقة لدى مالك المستودع في GitHub Secrets باسم `WINDOWS_SIGNING_CERT_BASE64` و`WINDOWS_SIGNING_CERT_PASSWORD`. دون شهادة ناشر موثوقة سيبقى المثبّت غير موقّع وقد يستمر تحذير SmartScreen؛ تعديل الكود وحده لا يزيل سمعة الملف غير المعروفة.
+
 **صفحة التنزيل الرسمية:** https://github.com/tammem2025-beep/midar-system/releases/latest
 
 افتح أحدث إصدار، ثم من قسم **Assets** نزّل ملف `.exe`، مثل `M-Setup-0.22.0-Windows-x64.exe`. لا تختَر `Source code (zip)` أو `Source code (tar.gz)`؛ فهما ملفات مصدر وليسا مثبّت ويندوز.
