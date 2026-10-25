@@ -88,8 +88,8 @@ def test_health_setup_and_core_crud(client: TestClient, monkeypatch):
     monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
     root = client.get("/")
     assert root.status_code == 200
-    assert '<title>M</title>' in root.text and "0.23.1" in root.text
-    assert 'href="/midar-ui.css?v=0.23.1"' in root.text
+    assert '<title>M</title>' in root.text and "0.24.0" in root.text
+    assert 'href="/midar-ui.css?v=0.24.0"' in root.text
     assert root.text.count('rel="stylesheet"') == 1
     assert client.get("/midar-ui.css").status_code == 200
     for retired in ("/styles.css", "/theme.css", "/visual-upgrade.css", "/settings-enhanced.css", "/premium-settings.css", "/experience.css", "/premium-experience.css", "/visual-redesign.css", "/dashboard-command.css", "/premium-shell.css", "/content-calendar.css"):
@@ -112,7 +112,7 @@ def test_health_setup_and_core_crud(client: TestClient, monkeypatch):
     assert settings_css_asset.status_code == 200
     for required_ui_function in ("renderEnhancedSettings", "processGoogleRedirect", "configureGoogleLogin", "loadAndApplyPreferences", "applyAppearancePrefs", "startGoogleLogin"):
         assert f"function {required_ui_function}" in settings_js_asset.text
-    assert 'href="/midar-ui.css?v=0.23.1"' in root.text
+    assert 'href="/midar-ui.css?v=0.24.0"' in root.text
     assert 'src="/settings-enhanced.js' in root.text
     assert css_asset.status_code == 200 and ".provider-grid" in css_asset.text
     assert icon_asset.status_code == 200 and "linearGradient" in icon_asset.text
@@ -189,13 +189,13 @@ def test_provider_catalog_is_truthful_and_never_exposes_secret_values(client: Te
     response = client.get("/api/v1/integrations/catalog", headers=owner)
     assert response.status_code == 200, response.text
     payload = response.json()
-    assert payload["release"] == "0.23.1"
+    assert payload["release"] == "0.24.0"
     providers = {p["platform"]: p for p in payload["providers"]}
     assert set(providers) == {"Facebook", "Instagram", "WhatsApp", "Telegram", "X", "YouTube", "TikTok", "LinkedIn", "Other"}
     assert providers["Telegram"]["implementation_status"] == "partial"
     assert providers["Telegram"]["implemented_capabilities"] == ["verify_destination", "publish_text"]
     assert providers["Facebook"]["implementation_status"] == "partial"
-    assert providers["Facebook"]["implemented_capabilities"] == ["account_authorization", "read_page_posts", "read_page_videos"]
+    assert providers["Facebook"]["implemented_capabilities"] == ["account_authorization", "read_page_posts", "read_page_videos", "publish_page_text"]
     assert all((p["docs_url"] is None or p["docs_url"].startswith("https://")) for p in providers.values())
     assert secret not in response.text
     assert "التسجيل في الكتالوج لا يعني" in payload["notice"]
@@ -804,10 +804,10 @@ def test_short_video_drafts_are_persisted_validated_and_workspace_scoped(client:
 def test_experience_layer_and_command_center_are_served(client: TestClient):
     root = client.get("/")
     assert root.status_code == 200
-    assert 'href="/midar-ui.css?v=0.23.1"' in root.text
+    assert 'href="/midar-ui.css?v=0.24.0"' in root.text
     assert root.text.count('rel="stylesheet"') == 1
-    assert 'src="/command-center.js?v=0.23.1"' in root.text
-    assert root.text.index('src="/app.js?v=0.23.1"') < root.text.index('src="/command-center.js?v=0.23.1"')
+    assert 'src="/command-center.js?v=0.24.0"' in root.text
+    assert root.text.index('src="/app.js?v=0.24.0"') < root.text.index('src="/command-center.js?v=0.24.0"')
     css = client.get("/midar-ui.css")
     js = client.get("/command-center.js")
     assert css.status_code == 200 and "xp-command-dialog" in css.text
@@ -820,9 +820,9 @@ def test_experience_layer_and_command_center_are_served(client: TestClient):
         assert fragment in app_js.text
     assert all(fragment in css.text for fragment in (".workspace-hero", ".upcoming-item", "prefers-reduced-motion", ":focus-visible", ".review-note", ".cm-month-grid"))
     sw = client.get("/sw.js")
-    assert sw.status_code == 200 and "m-shell-v0230" in sw.text
-    assert "'/midar-ui.css?v=0.23.1'" in sw.text
-    assert "'/command-center.js?v=0.23.1'" in sw.text
+    assert sw.status_code == 200 and "m-shell-v0240" in sw.text
+    assert "'/midar-ui.css?v=0.24.0'" in sw.text
+    assert "'/command-center.js?v=0.24.0'" in sw.text
     for retired in ("'/experience.css", "'/dashboard-command.css", "'/premium-shell.css", "'/content-calendar.css"):
         assert retired not in sw.text
 
@@ -886,14 +886,14 @@ def test_stylesheet_bundle_is_single_ordered_runtime_asset(client: TestClient):
     assert "overflow-y: auto" in bundle.text and "overscroll-behavior-y: contain" in bundle.text
     assert "11-sidebar-redesign.css" in bundle.text
     sw = client.get("/sw.js")
-    assert "'/midar-ui.css?v=0.23.1'" in sw.text
-    assert "m-shell-v0230" in sw.text
+    assert "'/midar-ui.css?v=0.24.0'" in sw.text
+    assert "m-shell-v0240" in sw.text
 
 
 def test_service_worker_precaches_settings_controller_and_favicon(client: TestClient):
     sw = client.get("/sw.js")
     assert sw.status_code == 200
-    assert "m-shell-v0230" in sw.text
+    assert "m-shell-v0240" in sw.text
     assert "'/settings-enhanced.js" in sw.text
     icon = client.get("/favicon.ico")
     assert icon.status_code == 200
@@ -905,7 +905,7 @@ def test_service_worker_precaches_settings_controller_and_favicon(client: TestCl
 def test_cross_platform_pwa_manifest_and_safe_area_assets(client: TestClient):
     page = client.get("/")
     assert page.status_code == 200
-    assert 'href="/midar-ui.css?v=0.23.1"' in page.text
+    assert 'href="/midar-ui.css?v=0.24.0"' in page.text
     for token in (
         'name="apple-mobile-web-app-capable" content="yes"',
         'name="apple-mobile-web-app-status-bar-style" content="black-translucent"',
@@ -936,7 +936,7 @@ def test_cross_platform_responsive_css_and_mobile_drawer_accessibility(client: T
         assert token in css.text
     for token in ("aria-modal", "sidebar.inert=true", "event.key==='Escape'", "installButton.addEventListener('click'", "navigator.standalone", "shouldOpen?'إغلاق القائمة':'فتح القائمة'", "isAppleTouchDevice()", "document.body.style.position='fixed'", "window.scrollTo(0,mobileNavScrollY)"):
         assert token in js.text
-    assert "m-shell-v0230" in sw.text
+    assert "m-shell-v0240" in sw.text
     for asset in ("/icon-192.png", "/icon-512.png", "/apple-touch-icon.png"):
         assert f"'{asset}'" in sw.text
 
@@ -1458,6 +1458,7 @@ def test_meta_account_token_selection_and_reels_normalization():
     assert params["state"] == ["state-test"]
     assert "pages_read_user_content" in params["scope"][0]
     assert "instagram_basic" in params["scope"][0]
+    assert "pages_manage_posts" in params["scope"][0]
 
     media = _normalize_instagram({
         "id": "media-123", "caption": "Creator reel", "media_type": "VIDEO",
@@ -1491,6 +1492,10 @@ def test_meta_oauth_callback_persists_facebook_and_instagram_accounts(client: Te
         assert short_lived_token == "short-lived-user-token"
         return {"access_token": "long-lived-user-token", "expires_in": 5184000}
 
+    async def fake_granted_permissions(config, user_token):
+        assert user_token == "long-lived-user-token"
+        return ("pages_show_list", "pages_read_engagement", "pages_read_user_content", "instagram_basic", "pages_manage_posts")
+
     async def fake_list_managed_pages(config, user_token):
         assert user_token == "long-lived-user-token"
         return [{
@@ -1505,6 +1510,7 @@ def test_meta_oauth_callback_persists_facebook_and_instagram_accounts(client: Te
 
     monkeypatch.setattr(main_module, "exchange_meta_code", fake_exchange_meta_code)
     monkeypatch.setattr(main_module, "exchange_for_long_lived_token", fake_exchange_for_long_lived_token)
+    monkeypatch.setattr(main_module, "list_granted_permissions", fake_granted_permissions)
     monkeypatch.setattr(main_module, "list_managed_pages", fake_list_managed_pages)
 
     owner_headers = create_owner(client, "meta-oauth-owner@example.com")
@@ -1546,3 +1552,113 @@ def test_meta_oauth_callback_persists_facebook_and_instagram_accounts(client: Te
         assert instagram_credential is not None
         assert facebook_credential.access_token == "facebook-page-access-token"
         assert instagram_credential.access_token == "facebook-page-access-token"
+
+
+
+def _prepare_connected_facebook_page(client: TestClient, owner_headers: dict[str, str], email: str, page_id: str = "123456789") -> str:
+    from app.integrations.credential_store import store_provider_credential
+    from app.security_tokens import generate_provider_encryption_key
+
+    account_response = client.post("/api/v1/social-accounts", headers=owner_headers, json={
+        "platform": "Facebook", "account_name": "صفحة اختبار Facebook", "handle": "@midar_facebook_test",
+    })
+    assert account_response.status_code == 201, account_response.text
+    account_id = account_response.json()["id"]
+    with SessionLocal() as db:
+        user = db.query(User).filter(User.email == email).one()
+        membership = db.query(Membership).filter(Membership.user_id == user.id).one()
+        account = db.get(SocialAccount, account_id)
+        account.connection_status = "connected"
+        account.provider_account_id = page_id
+        store_provider_credential(
+            db, organization_id=membership.organization_id, social_account_id=account.id,
+            actor_user_id=user.id, provider="Facebook", access_token="encrypted-facebook-page-token",
+            scopes=("pages_show_list", "pages_read_engagement", "pages_manage_posts"),
+        )
+        db.commit()
+    return account_id
+
+
+def test_facebook_page_text_publish_uses_encrypted_page_credential_and_prevents_duplicate(
+    client: TestClient, monkeypatch,
+):
+    monkeypatch.setenv("ENABLE_EXTERNAL_PUBLISHING", "true")
+    monkeypatch.setenv("META_APP_ID", "test-meta-app-id")
+    monkeypatch.setenv("META_APP_SECRET", "test-meta-app-secret")
+    monkeypatch.setenv("META_REDIRECT_URI", "http://127.0.0.1:8000/api/v1/integrations/meta/callback")
+    monkeypatch.setenv("META_GRAPH_API_VERSION", "v26.0")
+    from app.security_tokens import generate_provider_encryption_key
+    monkeypatch.setenv("PROVIDER_TOKEN_ENCRYPTION_KEY", generate_provider_encryption_key())
+
+    owner_email = "facebook-publish-owner@example.com"
+    headers = create_owner(client, owner_email)
+    account_id = _prepare_connected_facebook_page(client, headers, owner_email)
+    sends = []
+
+    async def fake_publish(config, page_id, page_token, message):
+        sends.append((config["version"], page_id, page_token, message))
+        return {"id": "123456789_987654321", "post_id": "987654321"}
+
+    monkeypatch.setattr(main_module, "meta_publish_page_text", fake_publish)
+    created = client.post("/api/v1/posts", headers=headers, json={
+        "title": "إطلاق من مدار", "content": "منشور حقيقي لصفحة Facebook",
+        "platform": "Facebook", "status": "draft", "social_account_id": account_id,
+    })
+    assert created.status_code == 201, created.text
+
+    published = client.post(f"/api/v1/posts/{created.json()['id']}/publish", headers=headers)
+    assert published.status_code == 200, published.text
+    assert published.json()["status"] == "published"
+    assert published.json()["provider_post_id"] == "123456789_987654321"
+    assert published.json()["published_at"] is not None
+    assert sends == [("v26.0", "123456789", "encrypted-facebook-page-token", "منشور حقيقي لصفحة Facebook")]
+
+    duplicate = client.post(f"/api/v1/posts/{created.json()['id']}/publish", headers=headers)
+    assert duplicate.status_code == 409
+    assert len(sends) == 1
+
+
+def test_facebook_publishing_is_blocked_without_granted_write_scope(client: TestClient, monkeypatch):
+    monkeypatch.setenv("ENABLE_EXTERNAL_PUBLISHING", "true")
+    monkeypatch.setenv("META_APP_ID", "test-meta-app-id")
+    monkeypatch.setenv("META_APP_SECRET", "test-meta-app-secret")
+    monkeypatch.setenv("META_REDIRECT_URI", "http://127.0.0.1:8000/api/v1/integrations/meta/callback")
+    monkeypatch.setenv("META_GRAPH_API_VERSION", "v26.0")
+    from app.integrations.credential_store import store_provider_credential
+    from app.security_tokens import generate_provider_encryption_key
+    monkeypatch.setenv("PROVIDER_TOKEN_ENCRYPTION_KEY", generate_provider_encryption_key())
+    owner_email = "facebook-readonly-owner@example.com"
+    headers = create_owner(client, owner_email)
+    account_response = client.post("/api/v1/social-accounts", headers=headers, json={
+        "platform": "Facebook", "account_name": "صفحة قراءة فقط", "handle": "@midar_readonly",
+    })
+    assert account_response.status_code == 201, account_response.text
+    account_id = account_response.json()["id"]
+    with SessionLocal() as db:
+        user = db.query(User).filter(User.email == owner_email).one()
+        membership = db.query(Membership).filter(Membership.user_id == user.id).one()
+        account = db.get(SocialAccount, account_id)
+        account.connection_status = "connected"
+        account.provider_account_id = "234567890"
+        store_provider_credential(
+            db, organization_id=membership.organization_id, social_account_id=account.id,
+            actor_user_id=user.id, provider="Facebook", access_token="encrypted-read-only-page-token",
+            scopes=("pages_show_list", "pages_read_engagement"),
+        )
+        db.commit()
+    post = client.post("/api/v1/posts", headers=headers, json={
+        "title": "قراءة فقط", "content": "لن يرسل هذا النص", "platform": "Facebook",
+        "status": "draft", "social_account_id": account_id,
+    })
+    assert post.status_code == 201, post.text
+    sent = []
+
+    async def fake_publish(*args, **kwargs):
+        sent.append(True)
+        return {"id": "should-not-happen"}
+
+    monkeypatch.setattr(main_module, "meta_publish_page_text", fake_publish)
+    response = client.post(f"/api/v1/posts/{post.json()['id']}/publish", headers=headers)
+    assert response.status_code == 409
+    assert "pages_manage_posts" in response.text
+    assert sent == []
