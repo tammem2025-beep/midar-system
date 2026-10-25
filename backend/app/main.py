@@ -917,8 +917,19 @@ def integration_status(ctx: AuthContext = Depends(get_context), db: Session = De
             continue
         keys = list(definition["required_environment"])
         present = all(bool(os.getenv(key, "").strip()) for key in keys) if keys else False
-        implemented = provider == "Telegram" and definition["implementation_status"] in {"partial", "implemented"}
-        if implemented:
+        meta_provider = provider in {"Facebook", "Instagram"}
+        implemented = (provider == "Telegram" and definition["implementation_status"] in {"partial", "implemented"}) or meta_provider
+        connected_accounts = 0
+        if meta_provider:
+            connected_accounts = int(db.scalar(select(func.count(SocialAccount.id)).where(
+                SocialAccount.organization_id == ctx.organization.id,
+                SocialAccount.platform == provider,
+                SocialAccount.connection_status == "connected",
+                SocialAccount.provider_account_id.is_not(None),
+            )) or 0)
+            config_ready = bool(get_meta_config())
+            state = "connected_read_only" if connected_accounts else ("authorization_required" if config_ready else "not_configured")
+        elif implemented:
             state = "configured_channel_verification_required" if present else "not_configured"
         else:
             state = "credentials_present_flow_pending" if present else "not_configured"
@@ -935,6 +946,7 @@ def integration_status(ctx: AuthContext = Depends(get_context), db: Session = De
             "description": definition["description_ar"],
             "implemented_capabilities": list(definition["implemented_capabilities"]),
             "planned_capabilities": list(definition["planned_capabilities"]),
+            "connected_accounts": connected_accounts if meta_provider else 0,
             "supported_actions": (["verify_channel", "publish_text"] if provider == "Telegram" else list(definition["implemented_capabilities"])) if implemented else [],
         })
 
