@@ -178,7 +178,7 @@ def test_health_setup_and_core_crud(client: TestClient, monkeypatch):
     providers = {p["platform"]: p for p in integrations.json()["providers"]}
     assert providers["Telegram"]["connector_implemented"] is True
     assert providers["Telegram"]["supported_actions"] == ["verify_channel", "publish_text"]
-    assert all(not p["connector_implemented"] for name, p in providers.items() if name not in {"Telegram", "Facebook", "Instagram", "X", "LinkedIn", "TikTok", "YouTube"})
+    assert all(not p["connector_implemented"] for name, p in providers.items() if name not in {"Telegram", "Facebook", "Instagram", "WhatsApp", "X", "LinkedIn", "TikTok", "YouTube"})
 
 
 
@@ -1662,3 +1662,136 @@ def test_facebook_publishing_is_blocked_without_granted_write_scope(client: Test
     assert response.status_code == 409
     assert "pages_manage_posts" in response.text
     assert sent == []
+
+
+
+def _configure_whatsapp_test(monkeypatch):
+    from app.security_tokens import generate_provider_encryption_key
+    monkeypatch.setenv("WHATSAPP_PHONE_NUMBER_ID", "1234567890")
+    monkeypatch.setenv("WHATSAPP_ACCESS_TOKEN", "test-whatsapp-cloud-token")
+    monkeypatch.setenv("WHATSAPP_VERIFY_TOKEN", "test-whatsapp-verify-token")
+    monkeypatch.setenv("WHATSAPP_APP_SECRET", "test-whatsapp-app-secret")
+    monkeypatch.setenv("WHATSAPP_GRAPH_API_VERSION", "v26.0")
+    monkeypatch.setenv("PROVIDER_TOKEN_ENCRYPTION_KEY", generate_provider_encryption_key())
+
+
+def _fake_whatsapp_number(config):
+    assert config["phone_number_id"] == "1234567890"
+    return {
+        "id": "1234567890",
+        "display_phone_number": "+1 555 123 4567",
+        "verified_name": "M Test Business",
+        "quality_rating": "GREEN",
+    }
+
+
+def test_whatsapp_business_connection_and_status_use_real_verified_number(client: TestClient, monkeypatch):
+    _configure_whatsapp_test(monkeypatch)
+    monkeypatch.setattr(main_module, "whatsapp_verify_business_number", _fake_whatsapp_number)
+    headers = create_owner(client, "whatsapp-verify-owner@example.com")
+
+    response = client.post("/api/v1/integrations/whatsapp/verify", headers=headers)
+    assert response.status_code == 200, response.text
+    assert response.json()["verified"] is True
+    assert response.json()["account"]["platform"] == "WhatsApp"
+    assert response.json()["account"]["provider_account_id"] == "1234567890"
+    assert response.json()["webhook_ready"] is True
+
+    status = client.get("/api/v1/integrations/status", headers=headers)
+    assert status.status_code == 200, status.text
+    providers = {item["platform"]: item for item in status.json()["providers"]}
+    assert providers["WhatsApp"]["connector_implemented"] is True
+    assert providers["WhatsApp"]["status"] == "connected"
+    assert providers["WhatsApp"]["connected_accounts"] == 1
+    assert set(providers["WhatsApp"]["supported_actions"]) == {
+        "verify_business_number", "send_text", "receive_webhooks",
+    }
+
+
+def test_whatsapp_signed_webhook_receives_real_message_and_reply_sends_via_cloud_api(
+    client: TestClient, monkeypatch,
+):
+    import hashlib
+    import hmac
+    import json
+
+    _configure_whatsapp_test(monkeypatch)
+    monkeypatch.setattr(main_module, "whatsapp_verify_business_number", _fake_whatsapp_number)
+    headers = create_owner(client, "whatsapp-inbox-owner@example.com")
+    verified = client.post("/api/v1/integrations/whatsapp/verify", headers=headers)
+    assert verified.status_code == 200, verified.text
+
+    # Meta's webhook signature is checked against the exact raw request body.
+    event = {
+        "object": "whatsapp_business_account",
+        "entry": [{
+            "changes": [{
+                "field": "messages",
+                "value": {
+                    "metadata": {"phone_number_id": "1234567890"},
+                    "contacts": [{"wa_id": "15551234567", "profile": {"name": "عميل حقيقي"}}],
+                    "messages": [{
+                        "from": "15551234567", "id": "wamid.test.inbound.001",
+                        "type": "text", "text": {"body": "مرحبًا، أريد الاستفسار"},
+                    }],
+                },
+            }],
+        }],
+    }
+    raw = json.dumps(event, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    signature = "sha256=" + hmac.new(
+        b"test-whatsapp-app-secret", raw, hashlib.sha256,
+    ).hexdigest()
+    received = client.post(
+        "/api/v1/webhooks/whatsapp", content=raw,
+        headers={"Content-Type": "application/json", "X-Hub-Signature-256": signature},
+    )
+    assert received.status_code == 200, received.text
+    assert received.json()["stored_messages"] == 1
+
+    duplicate = client.post(
+        "/api/v1/webhooks/whatsapp", content=raw,
+        headers={"Content-Type": "application/json", "X-Hub-Signature-256": signature},
+    )
+    assert duplicate.status_code == 200, duplicate.text
+    assert duplicate.json()["stored_messages"] == 0
+
+    conversations = client.get("/api/v1/conversations", headers=headers)
+    assert conversations.status_code == 200, conversations.text
+    conversation = next(item for item in conversations.json() if item["channel"] == "WhatsApp")
+    observed = client.get(f"/api/v1/conversations/{conversation['id']}/messages", headers=headers)
+    assert observed.status_code == 200, observed.text
+    assert len(observed.json()) == 1
+    assert observed.json()[0]["body"] == "مرحبًا، أريد الاستفسار"
+    assert observed.json()[0]["delivery_status"] == "received"
+
+    send_calls = []
+
+    async def fake_send(**kwargs):
+        send_calls.append(kwargs)
+        return {"message_id": "wamid.test.outbound.002", "recipient_id": "15551234567"}
+
+    monkeypatch.setattr(main_module, "whatsapp_send_text", fake_send)
+    reply = client.post(
+        f"/api/v1/conversations/{conversation['id']}/messages",
+        headers=headers, json={"direction": "outbound", "body": "أهلًا بك، كيف نساعدك؟"},
+    )
+    assert reply.status_code == 201, reply.text
+    assert reply.json()["delivery_status"] == "sent"
+    assert send_calls == [{
+        "graph_version": "v26.0",
+        "phone_number_id": "1234567890",
+        "access_token": "test-whatsapp-cloud-token",
+        "recipient": "15551234567",
+        "text": "أهلًا بك، كيف نساعدك؟",
+    }]
+
+
+def test_whatsapp_webhook_rejects_missing_or_invalid_signature(client: TestClient, monkeypatch):
+    _configure_whatsapp_test(monkeypatch)
+    response = client.post(
+        "/api/v1/webhooks/whatsapp",
+        content=b'{"object":"whatsapp_business_account","entry":[]}',
+        headers={"Content-Type": "application/json", "X-Hub-Signature-256": "sha256=wrong"},
+    )
+    assert response.status_code == 401
