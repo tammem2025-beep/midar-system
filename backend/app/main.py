@@ -1462,7 +1462,7 @@ async def publish_post(post_id: str, ctx: AuthContext = Depends(get_context), db
     text_body = (post.content or "").strip() or post.title.strip()
     if not text_body:
         raise HTTPException(status_code=422, detail="أضف نصًا للمنشور قبل النشر")
-    max_chars = 4096 if post.platform == "Telegram" else 28000 if post.platform == "X" else 3000 if post.platform == "LinkedIn" else 60000
+    max_chars = 4096 if post.platform == "Telegram" else 280 if post.platform == "X" else 3000 if post.platform == "LinkedIn" else 60000
     if len(text_body) > max_chars:
         raise HTTPException(status_code=422, detail=f"يتجاوز النص الحد المسموح لهذه المنصة وهو {max_chars} حرفًا")
 
@@ -1663,7 +1663,7 @@ def _upsert_oauth_social_account(db: Session, ctx: AuthContext, identity) -> Soc
     return account
 
 
-@app.post(f"{API_PREFIX}/integrations/oauth/{'{'}provider{'}'}/connect-url")
+@app.post(f"{API_PREFIX}/integrations/oauth/{{provider}}/connect-url")
 def social_oauth_connect_url(
     provider: str, request: Request, ctx: AuthContext = Depends(get_context), db: Session = Depends(get_db),
 ):
@@ -1699,7 +1699,7 @@ def social_oauth_connect_url(
     return response
 
 
-@app.get(f"{API_PREFIX}/integrations/oauth/{'{'}provider{'}'}/callback")
+@app.get(f"{API_PREFIX}/integrations/oauth/{{provider}}/callback")
 async def social_oauth_callback(
     provider: str, request: Request, code: str | None = None, state: str | None = None,
     error: str | None = None, scopes: str | None = None, scope: str | None = None,
