@@ -81,7 +81,7 @@ jobs:
           WINDOWS_SIGNING_CERT_PASSWORD: ${{ secrets.WINDOWS_SIGNING_CERT_PASSWORD }}
         run: |
           if ([string]::IsNullOrWhiteSpace($env:WINDOWS_SIGNING_CERT_BASE64) -or [string]::IsNullOrWhiteSpace($env:WINDOWS_SIGNING_CERT_PASSWORD)) {
-            Write-Host "No trusted certificate configured. Installer remains unsigned; SmartScreen warnings may still appear."
+            Write-Host "No trusted certificate configured. Portable executable and installer remain unsigned; SmartScreen warnings may still appear."
             exit 0
           }
           $certPath = Join-Path $env:RUNNER_TEMP "m-signing.pfx"
@@ -90,14 +90,41 @@ jobs:
             $sdk = ${env:ProgramFiles(x86)}
             $signtool = Get-ChildItem (Join-Path $sdk "Windows Kits\10\bin\*\x64\signtool.exe") -ErrorAction SilentlyContinue | Sort-Object FullName -Descending | Select-Object -First 1
             if (!$signtool) { throw "SignTool was not found on the Windows runner." }
+            $targets = @()
+            $appBinary = Get-Item "dist\M\M.exe" -ErrorAction SilentlyContinue
+            if ($appBinary) { $targets += $appBinary }
             $installer = Get-ChildItem "installer\output\M-Setup-*-Windows-x64.exe" | Select-Object -First 1
             if (!$installer) { throw "Installer EXE was not found." }
-            & $signtool.FullName sign /fd SHA256 /f $certPath /p $env:WINDOWS_SIGNING_CERT_PASSWORD /tr "http://timestamp.digicert.com" /td SHA256 $installer.FullName
-            if ($LASTEXITCODE -ne 0) { throw "Authenticode signing failed." }
-            & $signtool.FullName verify /pa /all $installer.FullName
-            if ($LASTEXITCODE -ne 0) { throw "Authenticode signature verification failed." }
+            $targets += $installer
+            foreach ($target in $targets) {
+              & $signtool.FullName sign /fd SHA256 /f $certPath /p $env:WINDOWS_SIGNING_CERT_PASSWORD /tr "http://timestamp.digicert.com" /td SHA256 $target.FullName
+              if ($LASTEXITCODE -ne 0) { throw "Authenticode signing failed for $($target.Name)." }
+              & $signtool.FullName verify /pa /all $target.FullName
+              if ($LASTEXITCODE -ne 0) { throw "Authenticode signature verification failed for $($target.Name)." }
+            }
           } finally { Remove-Item -LiteralPath $certPath -Force -ErrorAction SilentlyContinue }
 
+      - name: Package portable Windows ZIP
+        shell: pwsh
+        run: |
+          $portableRoot = "dist\M-Portable"
+          if (Test-Path $portableRoot) { Remove-Item -LiteralPath $portableRoot -Recurse -Force }
+          New-Item -ItemType Directory -Path $portableRoot -Force | Out-Null
+          Copy-Item -Path "dist\M\*" -Destination $portableRoot -Recurse -Force
+          Set-Content -LiteralPath (Join-Path $portableRoot "portable-mode.flag") -Value "M-PORTABLE-DATA-V1" -Encoding Ascii
+          New-Item -ItemType Directory -Path "installer\output" -Force | Out-Null
+          $archive = "installer\output\M-Portable-0.23.0-Windows-x64.zip"
+          Compress-Archive -Path "$portableRoot\*" -DestinationPath $archive -CompressionLevel Optimal -Force
+          if (!(Test-Path $archive)) { throw "Portable ZIP was not created." }
+          Write-Host "Built portable package: $archive"
+
+      - name: Upload portable Windows package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: M-Windows-x64-Portable
+          path: installer/output/M-Portable-0.23.0-Windows-x64.zip
+          if-no-files-found: error
+          retention-days: 30
       - name: Upload Windows installer artifact
         uses: actions/upload-artifact@v4
         with:
