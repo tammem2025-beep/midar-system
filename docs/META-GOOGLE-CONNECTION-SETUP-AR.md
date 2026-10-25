@@ -10,7 +10,7 @@
 
 ## Facebook وInstagram
 
-أنشئ تطبيقًا في Meta for Developers وفعّل منتجات تسجيل الدخول وGraph API اللازمة. اطلب صلاحيات القراءة `pages_show_list` و`pages_read_engagement` و`pages_read_user_content` و`instagram_basic` حسب متطلبات مراجعة Meta. سجّل Redirect URI التالي في قائمة OAuth Redirect URIs المسموح بها:
+أنشئ تطبيقًا في Meta for Developers وفعّل منتجات تسجيل الدخول وGraph API اللازمة. اطلب الصلاحيات التي يحتاجها كل استخدام: `pages_show_list` و`pages_read_engagement` و`pages_read_user_content` للقراءة، و`pages_manage_posts` لنشر النصوص إلى صفحات Facebook، و`instagram_basic` لقراءة حساب Instagram الاحترافي. قد تتطلب صلاحيات النشر موافقة Meta ومراجعة التطبيق. سجّل Redirect URI التالي في قائمة OAuth Redirect URIs المسموح بها:
 
 `http://127.0.0.1:8000/api/v1/integrations/meta/callback`
 
@@ -30,9 +30,9 @@ META_GRAPH_API_VERSION=v26.0
 ## ما هو متاح فعليًا؟
 
 - Google: تسجيل دخول عبر OAuth وإعداد مساحة العمل الأولى بعد إعداد بيانات OAuth.
-- Facebook: ربط الصفحات التي تديرها وقراءة منشوراتها وفيديوهاتها، مع الصلاحيات المطلوبة.
-- Instagram: قراءة وسائط/Reels لحسابات Instagram الاحترافية المؤهلة المرتبطة بصفحات Facebook.
-- نشر Facebook/Instagram آليًا، والجدولة الخلفية، والرسائل الواردة ليست مفعّلة في هذا الإصدار. لا يُعرض أي محتوى تجريبي على أنه محتوى حقيقي.
+- Facebook: ربط صفحاتك وقراءة المنشورات والفيديوهات، إضافة إلى نشر منشورات نصية بعد منح `pages_manage_posts` فعليًا. الصور والفيديو لم تُفعّل للنشر بعد.
+- Instagram: قراءة وسائط/Reels للحسابات الاحترافية المؤهلة المرتبطة بصفحات Facebook؛ نشر Instagram والرسائل ما زالا غير مفعّلين.
+- لا توجد جدولة خلفية دائمة أو صندوق رسائل اجتماعي متزامن في هذا الإصدار. المنشور الذي يحمل موعدًا محفوظًا لا يُرسل تلقائيًا.
 
 ## حماية بيانات الاتصال
 
