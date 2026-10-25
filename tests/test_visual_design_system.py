@@ -53,6 +53,11 @@ def test_m_brand_assets_and_pwa_metadata_are_coherent():
     assert '<title>M</title>' in page
     assert "Manage. Connect. Grow." in page
     assert "/brand-m-mark.svg" in page
+    assert '<h1>M</h1>' not in page
+    assert '<b>M</b>' not in page
+    lockup = (ROOT / "frontend" / "brand-lockup.svg").read_text(encoding="utf-8")
+    assert '>M</text>' not in lockup
+    assert "Manage. Connect. Grow." in lockup
     assert manifest["name"] == "M"
     assert manifest["short_name"] == "M"
     for filename in (
@@ -64,13 +69,13 @@ def test_m_brand_assets_and_pwa_metadata_are_coherent():
 
 def test_runtime_assets_use_a_single_release_version():
     version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
-    assert version == "0.21.0"
+    assert version == "0.21.1"
     page = (ROOT / "frontend" / "index.html").read_text(encoding="utf-8")
     sw = (ROOT / "frontend" / "sw.js").read_text(encoding="utf-8")
     app = (ROOT / "frontend" / "app.js").read_text(encoding="utf-8")
     api = (ROOT / "backend" / "app" / "main.py").read_text(encoding="utf-8")
     assert f"midar-ui.css?v={version}" in page
-    assert "m-shell-v0210" in sw
+    assert "m-shell-v0211" in sw
     assert f"sw.js?v={version}" in app
     assert f'version="{version}"' in api
 
