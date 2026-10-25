@@ -60,7 +60,7 @@ if ($createdVenv) {
     }
 }
 
-Write-Host "Starting M — Digital Business Management at http://127.0.0.1:8000" -ForegroundColor Green
+Write-Host "Starting M - Digital Business Management at http://127.0.0.1:8000" -ForegroundColor Green
 Push-Location (Join-Path $projectRoot "backend")
 try {
     & $venvPython -m uvicorn app.main:app --reload --port 8000 --env-file (Join-Path $projectRoot ".env")
