@@ -6,6 +6,7 @@
   "مساحة عملك الرقمية الآمنة": "Your secure digital workspace",
   "مرحبًا بك": "Welcome",
   "مرحبًا بعودتك": "Welcome back",
+  "إعداد مساحة العمل لأول مرة": "Set up your workspace",
   "سجّل الدخول للمتابعة إلى مساحة عملك.": "Sign in to continue to your workspace.",
   "سجّل الدخول إلى مساحة العمل الخاصة بك.": "Sign in to your workspace.",
   "أنشئ حساب المالك وابدأ مساحة عملك الخاصة. هذه خطوة إعداد أولية تنفذ مرة واحدة.": "Create the workspace owner account. This first-time setup happens once.",
