@@ -111,6 +111,7 @@ PWA يثبت واجهة الويب، ولا يحوّلها إلى تطبيق أ�
 - docs/MOBILE-PWA-SETUP-AR.md
 - docs/PRODUCTION-CHECKLIST.md
 - docs/INTEGRATION-SECURITY-AUDIT-AR.md
+- docs/COMPETITIVE-REVIEW-AR.md
 
 ## أمان البيانات
 
