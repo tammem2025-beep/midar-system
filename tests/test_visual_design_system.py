@@ -107,3 +107,33 @@ def test_sidebar_active_state_uses_selected_brand_accent():
 def test_windows_launcher_is_ascii_safe_for_legacy_powershell():
     launcher = (ROOT / "run-m-windows.ps1").read_text(encoding="utf-8")
     assert launcher.isascii(), "Keep the Windows PowerShell launcher ASCII-only; UTF-8 without BOM can be misread by Windows PowerShell 5.1."
+
+
+
+def test_same_release_social_feed_and_keyboard_menu_improvements():
+    app = (ROOT / "frontend" / "app.js").read_text(encoding="utf-8")
+    page = (ROOT / "frontend" / "index.html").read_text(encoding="utf-8")
+    sw = (ROOT / "frontend" / "sw.js").read_text(encoding="utf-8")
+    brand = (ROOT / "frontend" / "styles-src" / "14-m-brand-identity.css").read_text(encoding="utf-8")
+    bundle = (ROOT / "frontend" / "midar-ui.css").read_text(encoding="utf-8")
+
+    assert "safeHttpsMediaUrl" in app
+    assert "metaMediaFilter" in app
+    assert "selected==='reels'" in app
+    assert 'data-view-remote-media="' in app
+    assert "event.key==='Escape'" in app
+    assert "build=patch1" in page
+    assert "m-shell-v0230-patch1" in sw
+    assert "Same-release visual patch" in brand
+    assert "Same-release visual patch" in bundle
+    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "0.23.0"
+
+
+def test_portable_windows_archive_has_independent_data_directory():
+    launcher = (ROOT / "desktop_launcher.py").read_text(encoding="utf-8")
+    workflow = (ROOT / ".github" / "workflows" / "release-windows.yml").read_text(encoding="utf-8")
+
+    assert "portable-mode.flag" in launcher
+    assert "M-Portable-Data" in launcher
+    assert "M-Windows-x64-Portable" in workflow
+    assert "M-Portable-0.23.0-Windows-x64.zip" in workflow
