@@ -49,7 +49,14 @@ SLOW_REQUEST_THRESHOLD_MS = 1500.0
 # Source layout differs between a source checkout (project/backend/app) and the
 # container image (project/app). Resolve the project root in both layouts.
 _APP_PARENT = Path(__file__).resolve().parents[1]
-PROJECT_DIR = _APP_PARENT.parent if _APP_PARENT.name == "backend" else _APP_PARENT
+# Packaged desktop builds set M_PROJECT_DIR to the install directory so static
+# assets stay outside PyInstaller's temporary extraction folder.
+_CONFIGURED_PROJECT_DIR = os.getenv("M_PROJECT_DIR", "").strip()
+PROJECT_DIR = (
+    Path(_CONFIGURED_PROJECT_DIR).expanduser().resolve()
+    if _CONFIGURED_PROJECT_DIR
+    else (_APP_PARENT.parent if _APP_PARENT.name == "backend" else _APP_PARENT)
+)
 FRONTEND_DIR = PROJECT_DIR / "frontend"
 MEDIA_DIR = Path(os.getenv("MEDIA_DIR", str(PROJECT_DIR / "data" / "media"))).resolve()
 MAX_IMAGE_BYTES = int(os.getenv("MAX_IMAGE_BYTES", str(20 * 1024 * 1024)))
