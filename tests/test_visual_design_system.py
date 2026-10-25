@@ -56,7 +56,7 @@ def test_m_brand_assets_and_pwa_metadata_are_coherent():
     assert '<button class="topbar-action" type="button" id="globalCreatePostBtn"' in page
     assert "accountSettingsBtn" not in page
     assert "languageToggleBtn" in page and "languageToggleAuthBtn" in page
-    assert '/i18n.js?v=0.22.0' in page
+    assert '/i18n.js?v=0.23.0' in page
     assert '<h1>M</h1>' not in page
     assert '<b>M</b>' not in page
     lockup = (ROOT / "frontend" / "brand-lockup.svg").read_text(encoding="utf-8")
@@ -73,13 +73,13 @@ def test_m_brand_assets_and_pwa_metadata_are_coherent():
 
 def test_runtime_assets_use_a_single_release_version():
     version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
-    assert version == "0.22.0"
+    assert version == "0.23.0"
     page = (ROOT / "frontend" / "index.html").read_text(encoding="utf-8")
     sw = (ROOT / "frontend" / "sw.js").read_text(encoding="utf-8")
     app = (ROOT / "frontend" / "app.js").read_text(encoding="utf-8")
     api = (ROOT / "backend" / "app" / "main.py").read_text(encoding="utf-8")
     assert f"midar-ui.css?v={version}" in page
-    assert "m-shell-v0220" in sw
+    assert "m-shell-v0230" in sw
     assert f"sw.js?v={version}" in app
     assert f'version="{version}"' in api
 

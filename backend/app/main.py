@@ -917,7 +917,7 @@ def integration_status(ctx: AuthContext = Depends(get_context), db: Session = De
             continue
         keys = list(definition["required_environment"])
         present = all(bool(os.getenv(key, "").strip()) for key in keys) if keys else False
-        implemented = definition["implementation_status"] in {"partial", "implemented"}
+        implemented = provider == "Telegram" and definition["implementation_status"] in {"partial", "implemented"}
         if implemented:
             state = "configured_channel_verification_required" if present else "not_configured"
         else:

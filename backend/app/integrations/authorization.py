@@ -194,7 +194,7 @@ def consume_authorization_transaction(
             "Authorization state expired; restart the flow.", reason="expired", cleanup_performed=True,
         )
 
-    if row.purpose in {"link", "identity_link"}:
+    if row.purpose in {"link", "identity_link", "connect"}:
         user = db.get(User, row.user_id) if row.user_id else None
         organization = db.get(Organization, row.organization_id) if row.organization_id else None
         membership = db.scalar(select(Membership).where(
@@ -232,7 +232,7 @@ def consume_authorization_transaction(
         )
     db.execute(delete(ProviderOAuthBinding).where(ProviderOAuthBinding.state_hash == row.state_hash))
     db.flush()
-    if result.purpose in {"link", "identity_link"} and result.user_id and result.organization_id:
+    if result.purpose in {"link", "identity_link", "connect"} and result.user_id and result.organization_id:
         db.add(AuditLog(
             organization_id=result.organization_id, user_id=result.user_id,
             action="integration.authorization_state_consumed", entity_type="provider",
