@@ -11,7 +11,7 @@ test('M first-run setup, single create action, bilingual shell, theme and mobile
   await page.locator('#languageToggleAuthBtn').click();
   await expect(page.locator('html')).toHaveAttribute('lang', 'en');
   await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
-  await expect(page.locator('#authTitle')).toHaveText('Welcome');
+  await expect(page.locator('#authTitle')).toHaveText('Set up your workspace');
   await page.locator('#languageToggleAuthBtn').click();
   await expect(page.locator('html')).toHaveAttribute('lang', 'ar');
   await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
