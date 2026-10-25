@@ -75,7 +75,7 @@ _CONFIG = {
         "redirect_uri": "TIKTOK_REDIRECT_URI",
         "authorization_endpoint": "https://www.tiktok.com/v2/auth/authorize/",
         "token_endpoint": "https://open.tiktokapis.com/v2/oauth/token/",
-        "scopes": ("user.info.basic", "video.list", "video.publish"),
+        "scopes": ("user.info.basic", "video.list"),
         "pkce": True,
     },
     "youtube": {
