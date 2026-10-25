@@ -1670,7 +1670,7 @@ async def meta_connect_callback(
             page_name = str(page.get("name") or "Facebook Page").strip()[:160]
             _upsert_meta_social_account(
                 db, ctx, platform="Facebook", external_id=page_id, account_name=page_name,
-                handle=f"page:{page_id}", access_token=access_token_for_account("Facebook", user_access_token=user_token, page_access_token=page_token), scopes=scopes,
+                handle=f"page:{page_id}", access_token=access_token_for_account("Facebook", user_access_token=long_payload["access_token"], page_access_token=page_token), scopes=scopes,
             )
             saved += 1
             instagram = page.get("instagram_business_account")
@@ -1681,7 +1681,7 @@ async def meta_connect_callback(
                     db, ctx, platform="Instagram", external_id=ig_id,
                     account_name=username or f"Instagram {ig_id}",
                     handle=f"@{username}" if username else f"ig:{ig_id}",
-                    access_token=access_token_for_account("Instagram", user_access_token=user_token, page_access_token=page_token), scopes=scopes,
+                    access_token=access_token_for_account("Instagram", user_access_token=long_payload["access_token"], page_access_token=page_token), scopes=scopes,
                 )
                 saved += 1
         if not saved:
