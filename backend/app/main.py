@@ -45,6 +45,7 @@ from .integrations.meta_graph import (META_SCOPES, MetaDeliveryUnknown, MetaGrap
 from .integrations.oauth_social import (SocialDeliveryUnknown, SocialOAuthError, exchange_and_identify, fetch_recent_content as fetch_social_recent_content, get_social_oauth_config, make_social_authorization_url, publish_text as publish_social_text)
 from .integrations.credential_store import CredentialScopeError, CredentialStoreError, load_provider_credential, store_provider_credential
 from .security_tokens import TokenVaultError
+from .integrations.whatsapp_cloud import (WhatsAppCloudError, WhatsAppDeliveryUnknown, get_whatsapp_config, get_whatsapp_webhook_secrets, verify_webhook_signature, verify_business_number as whatsapp_verify_business_number, send_text as whatsapp_send_text)
 
 API_PREFIX = "/api/v1"
 security_logger = logging.getLogger("midar.security")
@@ -1872,6 +1873,188 @@ def _upsert_meta_social_account(
         scopes=scopes, expires_at=None,
     )
     return account
+
+
+
+@app.post(f"{API_PREFIX}/integrations/whatsapp/verify")
+async def verify_whatsapp_business_number(ctx: AuthContext = Depends(get_context), db: Session = Depends(get_db)):
+    require_roles(ctx, {"owner", "admin"})
+    config = get_whatsapp_config()
+    if config is None:
+        raise HTTPException(status_code=503, detail="أضف WHATSAPP_PHONE_NUMBER_ID وWHATSAPP_ACCESS_TOKEN إلى إعدادات الخادم ثم أعد تشغيل M.")
+    if not os.getenv("PROVIDER_TOKEN_ENCRYPTION_KEY", "").strip():
+        raise HTTPException(status_code=503, detail="خزنة رموز المنصات غير مهيأة؛ أعد تشغيل M لتوليد مفتاح التشفير.")
+    try:
+        remote = await whatsapp_verify_business_number(config)
+    except WhatsAppCloudError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)[:350]) from exc
+    phone_id = str(remote["id"])
+    foreign = db.scalar(select(SocialAccount).where(
+        SocialAccount.platform == "WhatsApp",
+        SocialAccount.provider_account_id == phone_id,
+        SocialAccount.organization_id != ctx.organization.id,
+        SocialAccount.connection_status == "connected",
+    ))
+    if foreign is not None:
+        raise HTTPException(status_code=409, detail="رقم WhatsApp Business هذا مرتبط بمساحة عمل أخرى داخل هذا الخادم.")
+    display_number = str(remote.get("display_phone_number") or "").strip()
+    verified_name = str(remote.get("verified_name") or "").strip()
+    account = _upsert_meta_social_account(
+        db, ctx, platform="WhatsApp", external_id=phone_id,
+        account_name=(verified_name or display_number or "WhatsApp Business"),
+        handle=(display_number or f"wa:{phone_id}"),
+        access_token=config["access_token"], scopes=(),
+    )
+    account.last_synced_at = utcnow()
+    audit(db, ctx, "integration.whatsapp_business_verified", "social_account", account.id, {
+        "phone_number_id": phone_id, "has_display_number": bool(display_number),
+        "has_verified_name": bool(verified_name),
+    })
+    db.commit()
+    db.refresh(account)
+    return {
+        "verified": True,
+        "account": {
+            "id": account.id, "platform": account.platform, "account_name": account.account_name,
+            "handle": account.handle, "connection_status": account.connection_status,
+            "provider_account_id": account.provider_account_id,
+        },
+        "business": remote,
+        "webhook_ready": bool(get_whatsapp_webhook_secrets()),
+    }
+
+
+@app.get(f"{API_PREFIX}/webhooks/whatsapp")
+def verify_whatsapp_webhook(
+    mode: str | None = Query(default=None, alias="hub.mode"),
+    verify_token: str | None = Query(default=None, alias="hub.verify_token"),
+    challenge: str | None = Query(default=None, alias="hub.challenge"),
+):
+    webhook_secrets = get_whatsapp_webhook_secrets()
+    if not webhook_secrets:
+        raise HTTPException(status_code=503, detail="WhatsApp webhook secrets are not configured.")
+    expected_token, _ = webhook_secrets
+    if mode != "subscribe" or not verify_token or not secrets.compare_digest(verify_token, expected_token) or challenge is None:
+        raise HTTPException(status_code=403, detail="WhatsApp webhook verification was rejected.")
+    return Response(content=challenge, media_type="text/plain")
+
+
+@app.post(f"{API_PREFIX}/webhooks/whatsapp")
+async def receive_whatsapp_webhook(request: Request, db: Session = Depends(get_db)):
+    webhook_secrets = get_whatsapp_webhook_secrets()
+    if not webhook_secrets:
+        raise HTTPException(status_code=503, detail="WhatsApp webhook secrets are not configured.")
+    _, app_secret = webhook_secrets
+    size = request.headers.get("content-length", "")
+    if size.isdigit() and int(size) > 2 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Webhook payload exceeds the allowed size.")
+    raw_body = await request.body()
+    if not verify_webhook_signature(raw_body, request.headers.get("x-hub-signature-256", ""), app_secret):
+        raise HTTPException(status_code=401, detail="Invalid WhatsApp webhook signature.")
+    try:
+        event = json.loads(raw_body.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError):
+        raise HTTPException(status_code=400, detail="Webhook JSON is invalid.")
+    if not isinstance(event, dict) or event.get("object") != "whatsapp_business_account":
+        raise HTTPException(status_code=400, detail="Unexpected webhook event object.")
+
+    stored_messages = 0
+    entries = event.get("entry") if isinstance(event.get("entry"), list) else []
+    for entry in entries:
+        changes = entry.get("changes", []) if isinstance(entry, dict) else []
+        for change in changes if isinstance(changes, list) else []:
+            if not isinstance(change, dict) or change.get("field") != "messages":
+                continue
+            value = change.get("value") if isinstance(change.get("value"), dict) else {}
+            metadata = value.get("metadata") if isinstance(value.get("metadata"), dict) else {}
+            phone_id = str(metadata.get("phone_number_id") or "")
+            account = db.scalar(select(SocialAccount).where(
+                SocialAccount.platform == "WhatsApp",
+                SocialAccount.provider_account_id == phone_id,
+                SocialAccount.connection_status == "connected",
+            ))
+            if account is None:
+                continue
+            org_id = account.organization_id
+            names_by_phone = {}
+            for profile in value.get("contacts", []) if isinstance(value.get("contacts"), list) else []:
+                if isinstance(profile, dict):
+                    wa_id = str(profile.get("wa_id") or "")
+                    name = profile.get("profile", {}).get("name", "") if isinstance(profile.get("profile"), dict) else ""
+                    if wa_id:
+                        names_by_phone[wa_id] = str(name or "").strip()
+            for incoming in value.get("messages", []) if isinstance(value.get("messages"), list) else []:
+                if not isinstance(incoming, dict):
+                    continue
+                message_id = str(incoming.get("id") or "")
+                sender = str(incoming.get("from") or "")
+                if not message_id or not re.fullmatch(r"[0-9]{7,20}", sender):
+                    continue
+                duplicate = db.scalar(select(Message.id).where(
+                    Message.organization_id == org_id, Message.provider_message_id == message_id,
+                ))
+                if duplicate:
+                    continue
+                kind = str(incoming.get("type") or "unknown")
+                segment = incoming.get(kind) if isinstance(incoming.get(kind), dict) else {}
+                if kind == "text":
+                    body_text = str(segment.get("body") or "").strip()
+                elif kind in {"image", "video", "document", "audio", "sticker"}:
+                    caption = str(segment.get("caption") or "").strip()
+                    media_name = {"image":"صورة", "video":"فيديو", "document":"مستند", "audio":"رسالة صوتية", "sticker":"ملصق"}.get(kind, "وسيط")
+                    media_id = str(segment.get("id") or "")
+                    body_text = f"[{media_name} وارد عبر WhatsApp]" + (f" {caption}" if caption else "") + (f" (media_id: {media_id})" if media_id else "")
+                elif kind == "interactive":
+                    button = segment.get("button_reply") if isinstance(segment.get("button_reply"), dict) else {}
+                    list_reply = segment.get("list_reply") if isinstance(segment.get("list_reply"), dict) else {}
+                    body_text = str(button.get("title") or list_reply.get("title") or "رد تفاعلي عبر WhatsApp")
+                else:
+                    body_text = f"[رسالة WhatsApp من النوع {kind}]"
+                if not body_text:
+                    continue
+                phone = "+" + sender
+                contact = db.scalar(select(Contact).where(
+                    Contact.organization_id == org_id, or_(Contact.phone == phone, Contact.phone == sender),
+                ))
+                if contact is None:
+                    contact = Contact(
+                        organization_id=org_id, name=names_by_phone.get(sender) or phone,
+                        phone=phone, source="WhatsApp", stage="new", value=0, notes="",
+                    )
+                    db.add(contact)
+                    db.flush()
+                conversation = db.scalar(select(Conversation).where(
+                    Conversation.organization_id == org_id,
+                    Conversation.channel == "WhatsApp", Conversation.external_id == sender,
+                ))
+                if conversation is None:
+                    conversation = Conversation(
+                        organization_id=org_id, channel="WhatsApp", contact_id=contact.id,
+                        external_id=sender, status="open",
+                    )
+                    db.add(conversation)
+                    db.flush()
+                now = utcnow()
+                db.add(Message(
+                    organization_id=org_id, conversation_id=conversation.id,
+                    direction="inbound", body=body_text[:20000],
+                    provider_message_id=message_id, delivery_status="received", created_at=now,
+                ))
+                conversation.last_message_at = now
+                if conversation.status == "closed":
+                    conversation.status = "open"
+                stored_messages += 1
+            for receipt in value.get("statuses", []) if isinstance(value.get("statuses"), list) else []:
+                if not isinstance(receipt, dict) or not receipt.get("id") or not receipt.get("status"):
+                    continue
+                message = db.scalar(select(Message).where(
+                    Message.organization_id == org_id, Message.provider_message_id == str(receipt["id"]),
+                ))
+                new_status = str(receipt["status"]).casefold()
+                if message is not None and new_status in {"sent", "delivered", "read", "failed"}:
+                    message.delivery_status = new_status
+    db.commit()
+    return {"received": True, "stored_messages": stored_messages}
 
 
 @app.get(f"{API_PREFIX}/integrations/meta/config")
