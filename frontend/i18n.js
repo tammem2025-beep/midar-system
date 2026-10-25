@@ -342,7 +342,7 @@
     get language() { return language; },
     setLanguage,
     toggle() { setLanguage(language === 'ar' ? 'en' : 'ar'); },
-    t(value) { return language === 'en' ? (messages[value] || value) : value,
+    t(value) { return language === 'en' ? (messages[value] || value) : value; },
   };
 
   setLanguage(language, false);
