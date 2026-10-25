@@ -1353,8 +1353,8 @@ def test_contacts_csv_neutralizes_spreadsheet_formula_cells(client: TestClient):
     response = client.post("/api/v1/contacts", headers=headers, json={
         "name": '=HYPERLINK("https://evil.example","open")',
         "company": "+SUM(1,1)",
-        "email": "@SUM(1,1)",
-        "phone": "12345",
+        "email": "csv-test@example.com",
+        "phone": "@SUM(1,1)",
         "source": "-IMPORT",
         "stage": "new",
         "value": 1500,
@@ -1368,7 +1368,8 @@ def test_contacts_csv_neutralizes_spreadsheet_formula_cells(client: TestClient):
     row = rows[1]
     assert row[0].startswith("'=")
     assert row[1].startswith("'+")
-    assert row[2].startswith("'@")
+    assert row[2] == "csv-test@example.com"
+    assert row[3].startswith("'@")
     assert row[4].startswith("'-")
     assert row[8].startswith("'\t=")
     assert row[6] == "1500.0" or row[6] == "1500"
