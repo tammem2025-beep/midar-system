@@ -827,3 +827,18 @@ button:not(:disabled):active, .btn:not(:disabled):active { transform:translateY(
 @media(max-width:900px){.meta-feed-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:560px){.meta-feed-grid{grid-template-columns:1fr}.meta-feed-media{aspect-ratio:16/10}.meta-connection-banner{padding:14px}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;scroll-behavior:auto!important;transition-duration:.01ms!important}}
+/* Same-release visual patch: accessible dropdown and mobile Reels feed. */
+.account-menu { z-index: 1000; transform-origin: top right; }
+.account-menu [role="menuitem"] { min-height: 42px; border-radius: 10px; text-align: start; transition: background-color .16s ease, color .16s ease, transform .16s ease; }
+.account-menu [role="menuitem"]:hover, .account-menu [role="menuitem"]:focus-visible { background: var(--md-accent-soft); color: var(--md-text); }
+.account-menu [role="menuitem"]:focus-visible { outline: 2px solid var(--md-focus); outline-offset: 2px; }
+.meta-feed-toolbar { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin:0 0 16px; padding:12px 14px; border:1px solid var(--md-border); border-radius:var(--md-radius-lg); background:var(--md-surface); }
+.meta-feed-toolbar label { color:var(--md-text-muted); font-size:12px; font-weight:800; }
+.meta-feed-toolbar select { width:min(100%,260px); min-height:40px; }
+.meta-media-count { margin-inline-start:auto; color:var(--md-text-soft); font-size:11px; font-variant-numeric:tabular-nums; }
+.meta-feed-card[hidden] { display:none !important; }
+.meta-feed-card[data-media-type="REELS"] .meta-feed-media { aspect-ratio:9/16; max-height:560px; }
+.meta-feed-card[data-media-type="REELS"] .meta-feed-media video { object-fit:contain; }
+.meta-no-media { padding:18px; color:var(--md-text-muted); font-size:12px; text-align:center; }
+@media(max-width:560px){.meta-feed-toolbar{align-items:stretch;flex-direction:column;gap:8px}.meta-feed-toolbar select{width:100%;max-width:none}.meta-media-count{margin-inline-start:0}.meta-feed-card[data-media-type="REELS"] .meta-feed-media{max-height:68svh}.account-menu{inset-inline-end:0;max-width:calc(100vw - 24px)}}
+@media(prefers-reduced-motion:reduce){.account-menu [role="menuitem"]{transition:none!important}}
