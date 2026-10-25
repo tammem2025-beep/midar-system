@@ -1,0 +1,37 @@
+name: M quality checks
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - name: Install Python dependencies
+        run: python -m pip install -r backend/requirements.txt
+      - name: Compile Python source
+        run: python -m compileall -q backend
+      - name: Run automated tests
+        run: python -m pytest -q
+      - name: Rebuild CSS and verify committed bundle
+        run: |
+          python tools/build_frontend_css.py
+          git diff --exit-code -- frontend/midar-ui.css
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Check JavaScript syntax
+        run: |
+          node --check frontend/app.js
+          node --check frontend/settings-enhanced.js
+          node --check frontend/command-center.js

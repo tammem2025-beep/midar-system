@@ -50,10 +50,10 @@ def test_core_visual_contract_covers_shell_forms_tables_popovers_and_reduced_mot
 def test_m_brand_assets_and_pwa_metadata_are_coherent():
     page = (ROOT / "frontend" / "index.html").read_text(encoding="utf-8")
     manifest = json.loads((ROOT / "frontend" / "manifest.webmanifest").read_text(encoding="utf-8"))
-    assert "M — Digital Business Management" in page
+    assert '<title>M</title>' in page
     assert "Manage. Connect. Grow." in page
     assert "/brand-m-mark.svg" in page
-    assert manifest["name"] == "M — Digital Business Management"
+    assert manifest["name"] == "M"
     assert manifest["short_name"] == "M"
     for filename in (
         "brand-m-mark.svg", "brand-lockup.svg", "icon.svg", "icon-192.png",
@@ -64,13 +64,13 @@ def test_m_brand_assets_and_pwa_metadata_are_coherent():
 
 def test_runtime_assets_use_a_single_release_version():
     version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
-    assert version == "0.20.0"
+    assert version == "0.21.0"
     page = (ROOT / "frontend" / "index.html").read_text(encoding="utf-8")
     sw = (ROOT / "frontend" / "sw.js").read_text(encoding="utf-8")
     app = (ROOT / "frontend" / "app.js").read_text(encoding="utf-8")
     api = (ROOT / "backend" / "app" / "main.py").read_text(encoding="utf-8")
     assert f"midar-ui.css?v={version}" in page
-    assert "m-shell-v0200" in sw
+    assert "m-shell-v0210" in sw
     assert f"sw.js?v={version}" in app
     assert f'version="{version}"' in api
 
