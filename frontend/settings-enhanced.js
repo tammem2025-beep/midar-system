@@ -215,6 +215,24 @@ document.addEventListener('click', event => {
   if (event.target.closest('#settingsLogoutBtn')) performLogout();
 });
 
+document.addEventListener('pointerdown', event => {
+  const menu = document.querySelector('#accountMenu');
+  const wrap = document.querySelector('.account-menu-wrap');
+  const trigger = document.querySelector('#accountMenuBtn');
+  if (!menu || menu.classList.contains('hidden') || wrap?.contains(event.target)) return;
+  menu.classList.add('hidden');
+  trigger?.setAttribute('aria-expanded', 'false');
+});
+
+document.addEventListener('focusin', event => {
+  const menu = document.querySelector('#accountMenu');
+  const wrap = document.querySelector('.account-menu-wrap');
+  const trigger = document.querySelector('#accountMenuBtn');
+  if (!menu || menu.classList.contains('hidden') || wrap?.contains(event.target)) return;
+  menu.classList.add('hidden');
+  trigger?.setAttribute('aria-expanded', 'false');
+});
+
 document.addEventListener('keydown', event => {
   if (event.key !== 'Escape') return;
   const menu = document.querySelector('#accountMenu');
