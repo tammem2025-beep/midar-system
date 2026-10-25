@@ -1688,7 +1688,7 @@ async def meta_connect_callback(
         return finish("connection_failed")
 
 
-@app.get(f"{API_PREFIX}/integrations/meta/accounts/{account_id}/media")
+@app.get(f"{API_PREFIX}/integrations/meta/accounts/{{account_id}}/media")
 async def meta_account_media(
     account_id: str, limit: int = Query(30, ge=1, le=50),
     ctx: AuthContext = Depends(get_context), db: Session = Depends(get_db),
