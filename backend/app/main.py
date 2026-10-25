@@ -45,7 +45,7 @@ from .integrations.meta_graph import (META_SCOPES, MetaDeliveryUnknown, MetaGrap
 from .integrations.oauth_social import (SocialDeliveryUnknown, SocialOAuthError, exchange_and_identify, fetch_recent_content as fetch_social_recent_content, get_social_oauth_config, make_social_authorization_url, publish_text as publish_social_text)
 from .integrations.credential_store import CredentialScopeError, CredentialStoreError, load_provider_credential, store_provider_credential
 from .security_tokens import TokenVaultError
-from .integrations.whatsapp_cloud import (WhatsAppCloudError, WhatsAppDeliveryUnknown, get_whatsapp_config, get_whatsapp_webhook_secrets, verify_webhook_signature, verify_business_number as whatsapp_verify_business_number, send_text as whatsapp_send_text)
+from .integrations.whatsapp_cloud import (WhatsAppCloudError, WhatsAppDeliveryUnknown, get_whatsapp_config, get_webhook_secrets as get_whatsapp_webhook_secrets, verify_webhook_signature, verify_business_number as whatsapp_verify_business_number, send_text as whatsapp_send_text)
 
 API_PREFIX = "/api/v1"
 security_logger = logging.getLogger("midar.security")
