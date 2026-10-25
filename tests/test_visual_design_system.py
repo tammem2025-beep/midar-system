@@ -53,6 +53,10 @@ def test_m_brand_assets_and_pwa_metadata_are_coherent():
     assert '<title>M</title>' in page
     assert "Manage. Connect. Grow." in page
     assert "/brand-m-mark.svg" in page
+    assert '<button class="topbar-action" type="button" id="globalCreatePostBtn"' in page
+    assert "accountSettingsBtn" not in page
+    assert "languageToggleBtn" in page and "languageToggleAuthBtn" in page
+    assert '/i18n.js?v=0.22.0' in page
     assert '<h1>M</h1>' not in page
     assert '<b>M</b>' not in page
     lockup = (ROOT / "frontend" / "brand-lockup.svg").read_text(encoding="utf-8")
@@ -61,7 +65,7 @@ def test_m_brand_assets_and_pwa_metadata_are_coherent():
     assert manifest["name"] == "M"
     assert manifest["short_name"] == "M"
     for filename in (
-        "brand-m-mark.svg", "brand-lockup.svg", "icon.svg", "icon-192.png",
+        "brand-m-mark.svg", "brand-lockup.svg", "i18n.js", "icon.svg", "icon-192.png",
         "icon-512.png", "apple-touch-icon.png", "favicon.ico",
     ):
         assert (ROOT / "frontend" / filename).is_file(), filename
@@ -69,13 +73,13 @@ def test_m_brand_assets_and_pwa_metadata_are_coherent():
 
 def test_runtime_assets_use_a_single_release_version():
     version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
-    assert version == "0.21.1"
+    assert version == "0.22.0"
     page = (ROOT / "frontend" / "index.html").read_text(encoding="utf-8")
     sw = (ROOT / "frontend" / "sw.js").read_text(encoding="utf-8")
     app = (ROOT / "frontend" / "app.js").read_text(encoding="utf-8")
     api = (ROOT / "backend" / "app" / "main.py").read_text(encoding="utf-8")
     assert f"midar-ui.css?v={version}" in page
-    assert "m-shell-v0211" in sw
+    assert "m-shell-v0220" in sw
     assert f"sw.js?v={version}" in app
     assert f'version="{version}"' in api
 
