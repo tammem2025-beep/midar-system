@@ -18,7 +18,7 @@ test('M first-run setup, single create action, bilingual shell, theme and mobile
 
   await page.locator('#setupName').fill('M Test Owner');
   await page.locator('#setupOrganization').fill('M E2E Workspace');
-  await page.locator('#authEmail').fill('m-e2e-owner@example.test');
+  await page.locator('#authEmail').fill('m-e2e-owner@example.com');
   await page.locator('#authPassword').fill('Secure-E2E-Password-123!');
   await page.locator('#authSubmit').click();
 
