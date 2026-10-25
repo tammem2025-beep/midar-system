@@ -58,6 +58,30 @@ jobs:
           python -m PyInstaller --noconfirm --clean --onedir --windowed --name M --paths backend --collect-submodules app --collect-all uvicorn --collect-all cryptography --collect-all PIL --collect-all sqlalchemy.dialects.sqlite --collect-all email_validator desktop_launcher.py
           if (!(Test-Path "dist\M\M.exe")) { throw "PyInstaller did not produce dist\M\M.exe" }
 
+      - name: Sign desktop executable before packaging when a trusted certificate is configured
+        shell: pwsh
+        env:
+          WINDOWS_SIGNING_CERT_BASE64: \${{ secrets.WINDOWS_SIGNING_CERT_BASE64 }}
+          WINDOWS_SIGNING_CERT_PASSWORD: \${{ secrets.WINDOWS_SIGNING_CERT_PASSWORD }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_SIGNING_CERT_BASE64) -or [string]::IsNullOrWhiteSpace($env:WINDOWS_SIGNING_CERT_PASSWORD)) {
+            Write-Host "No trusted certificate configured. M.exe will remain unsigned; SmartScreen warnings may still appear."
+            exit 0
+          }
+          $certPath = Join-Path $env:RUNNER_TEMP "m-signing.pfx"
+          [IO.File]::WriteAllBytes($certPath, [Convert]::FromBase64String($env:WINDOWS_SIGNING_CERT_BASE64))
+          try {
+            $sdk = \${env:ProgramFiles(x86)}
+            $signtool = Get-ChildItem (Join-Path $sdk "Windows Kits\10\bin\*\x64\signtool.exe") -ErrorAction SilentlyContinue | Sort-Object FullName -Descending | Select-Object -First 1
+            if (!$signtool) { throw "SignTool was not found on the Windows runner." }
+            $appBinary = Get-Item "dist\M\M.exe" -ErrorAction SilentlyContinue
+            if (!$appBinary) { throw "M.exe was not found before packaging." }
+            & $signtool.FullName sign /fd SHA256 /f $certPath /p $env:WINDOWS_SIGNING_CERT_PASSWORD /tr "http://timestamp.digicert.com" /td SHA256 $appBinary.FullName
+            if ($LASTEXITCODE -ne 0) { throw "Authenticode signing failed for M.exe." }
+            & $signtool.FullName verify /pa /all $appBinary.FullName
+            if ($LASTEXITCODE -ne 0) { throw "M.exe signature verification failed." }
+          } finally { Remove-Item -LiteralPath $certPath -Force -ErrorAction SilentlyContinue }
+
       - name: Install Inno Setup
         shell: pwsh
         run: |
@@ -90,18 +114,12 @@ jobs:
             $sdk = ${env:ProgramFiles(x86)}
             $signtool = Get-ChildItem (Join-Path $sdk "Windows Kits\10\bin\*\x64\signtool.exe") -ErrorAction SilentlyContinue | Sort-Object FullName -Descending | Select-Object -First 1
             if (!$signtool) { throw "SignTool was not found on the Windows runner." }
-            $targets = @()
-            $appBinary = Get-Item "dist\M\M.exe" -ErrorAction SilentlyContinue
-            if ($appBinary) { $targets += $appBinary }
             $installer = Get-ChildItem "installer\output\M-Setup-*-Windows-x64.exe" | Select-Object -First 1
             if (!$installer) { throw "Installer EXE was not found." }
-            $targets += $installer
-            foreach ($target in $targets) {
-              & $signtool.FullName sign /fd SHA256 /f $certPath /p $env:WINDOWS_SIGNING_CERT_PASSWORD /tr "http://timestamp.digicert.com" /td SHA256 $target.FullName
-              if ($LASTEXITCODE -ne 0) { throw "Authenticode signing failed for $($target.Name)." }
-              & $signtool.FullName verify /pa /all $target.FullName
-              if ($LASTEXITCODE -ne 0) { throw "Authenticode signature verification failed for $($target.Name)." }
-            }
+            & $signtool.FullName sign /fd SHA256 /f $certPath /p $env:WINDOWS_SIGNING_CERT_PASSWORD /tr "http://timestamp.digicert.com" /td SHA256 $installer.FullName
+            if ($LASTEXITCODE -ne 0) { throw "Authenticode signing failed for $($installer.Name)." }
+            & $signtool.FullName verify /pa /all $installer.FullName
+            if ($LASTEXITCODE -ne 0) { throw "Authenticode signature verification failed for $($installer.Name)." }
           } finally { Remove-Item -LiteralPath $certPath -Force -ErrorAction SilentlyContinue }
 
       - name: Package portable Windows ZIP
@@ -118,18 +136,37 @@ jobs:
           if (!(Test-Path $archive)) { throw "Portable ZIP was not created." }
           Write-Host "Built portable package: $archive"
 
+      - name: Generate SHA-256 checksums for release packages
+        shell: pwsh
+        run: |
+          $targets = @()
+          $installer = Get-ChildItem "installer\output\M-Setup-*-Windows-x64.exe" | Select-Object -First 1
+          $portable = Get-ChildItem "installer\output\M-Portable-0.23.0-Windows-x64.zip" | Select-Object -First 1
+          if ($installer) { $targets += $installer }
+          if ($portable) { $targets += $portable }
+          if ($targets.Count -lt 2) { throw "Expected installer and portable ZIP before writing checksums." }
+          $lines = foreach ($target in $targets) {
+            $hash = Get-FileHash -LiteralPath $target.FullName -Algorithm SHA256
+            "{0}  {1}" -f $hash.Hash, $target.Name
+          }
+          $lines | Set-Content -LiteralPath "installer\output\SHA256SUMS.txt" -Encoding Ascii
+
       - name: Upload portable Windows package artifact
         uses: actions/upload-artifact@v4
         with:
           name: M-Windows-x64-Portable
-          path: installer/output/M-Portable-0.23.0-Windows-x64.zip
+          path: |
+            installer/output/M-Portable-0.23.0-Windows-x64.zip
+            installer/output/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 30
       - name: Upload Windows installer artifact
         uses: actions/upload-artifact@v4
         with:
           name: M-Windows-x64-Installer
-          path: installer/output/M-Setup-*-Windows-x64.exe
+          path: |
+            installer/output/M-Setup-*-Windows-x64.exe
+            installer/output/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 30
 
@@ -141,7 +178,10 @@ jobs:
           tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'v0.23.0' }}
           target_commitish: ${{ github.sha }}
           name: M 0.23.0 — Windows x64
-          files: installer/output/M-Setup-*-Windows-x64.exe
+          files: |
+            installer/output/M-Setup-*-Windows-x64.exe
+            installer/output/M-Portable-0.23.0-Windows-x64.zip
+            installer/output/SHA256SUMS.txt
           overwrite_files: true
           generate_release_notes: true
           fail_on_unmatched_files: true
