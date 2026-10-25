@@ -97,3 +97,9 @@ def test_sidebar_active_state_uses_selected_brand_accent():
     assert ".sidebar .nav button.active" in brand
     assert "background: linear-gradient(125deg, color-mix(in srgb, var(--md-accent) 25%" in brand
     assert ":root[data-theme=\"light\"] .sidebar .nav button.active" in brand
+
+
+
+def test_windows_launcher_is_ascii_safe_for_legacy_powershell():
+    launcher = (ROOT / "run-m-windows.ps1").read_text(encoding="utf-8")
+    assert launcher.isascii(), "Keep the Windows PowerShell launcher ASCII-only; UTF-8 without BOM can be misread by Windows PowerShell 5.1."
