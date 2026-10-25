@@ -7,7 +7,7 @@ import httpx
 
 META_AUTH_ENDPOINT = "https://www.facebook.com/{version}/dialog/oauth"
 META_GRAPH_ROOT = "https://graph.facebook.com"
-META_SCOPES = ("pages_show_list", "pages_read_engagement", "instagram_basic")
+META_SCOPES = ("pages_show_list", "pages_read_engagement", "pages_read_user_content", "instagram_basic")
 
 class MetaGraphError(RuntimeError):
     """Safe provider failure that never includes tokens or raw provider responses."""
