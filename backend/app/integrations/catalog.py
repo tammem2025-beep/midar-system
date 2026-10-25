@@ -42,7 +42,7 @@ PROVIDER_REGISTRY: tuple[dict[str, Any], ...] = (
         "docs_url": "https://developers.facebook.com/docs/whatsapp/cloud-api/",
         "implementation_status": "partial",
         "status_label_ar": "ربط رقم أعمال ورسائل فعلية",
-        "description_ar": "تحقق من رقم WhatsApp Business عبر Cloud API، واستقبال الرسائل عبر Webhook موقّع، وإرسال النص من صندوق الرسائل بعد ربط الرقم."
+        "description_ar": "تحقق من رقم WhatsApp Business عبر Cloud API، واستقبال الرسائل عبر Webhook موقّع، وإرسال النص من صندوق الرسائل بعد ربط الرقم.",
         "implemented_capabilities": ["verify_business_number", "send_text", "receive_webhooks", "read_inbound_text", "delivery_status_updates"],
         "planned_capabilities": ["قوالب الرسائل من الواجهة", "تنزيل الوسائط الواردة", "إرسال الصور والفيديو والملفات"],
         "requirements_ar": ["إعداد WhatsApp Business Platform", "معرّف رقم الهاتف", "رمز وصول وتحقق Webhook"],
