@@ -17,6 +17,8 @@ import tempfile
 from pathlib import Path
 import sys
 
+ROOT = Path(__file__).resolve().parents[1]
+
 import pytest
 
 _test_home = tempfile.TemporaryDirectory(prefix="midar-test-")
