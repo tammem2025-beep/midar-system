@@ -1675,7 +1675,7 @@ def _configure_whatsapp_test(monkeypatch):
     monkeypatch.setenv("PROVIDER_TOKEN_ENCRYPTION_KEY", generate_provider_encryption_key())
 
 
-def _fake_whatsapp_number(config):
+async def _fake_whatsapp_number(config):
     assert config["phone_number_id"] == "1234567890"
     return {
         "id": "1234567890",
