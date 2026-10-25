@@ -1432,3 +1432,36 @@ def test_unconfigured_development_secret_is_random_and_production_fails_closed()
     )
     assert production.returncode != 0
     assert "random SECRET_KEY" in production.stderr
+
+
+def test_meta_account_token_selection_and_reels_normalization():
+    from urllib.parse import parse_qs, urlparse
+    from app.integrations.meta_graph import (
+        META_SCOPES, _normalize_instagram, access_token_for_account, make_meta_authorization_url,
+    )
+
+    assert "pages_read_user_content" in META_SCOPES
+    assert access_token_for_account(
+        "Facebook", user_access_token="user-token", page_access_token="page-token",
+    ) == "page-token"
+    assert access_token_for_account(
+        "Instagram", user_access_token="user-token", page_access_token="page-token",
+    ) == "user-token"
+
+    auth_url = make_meta_authorization_url({
+        "app_id": "test-app",
+        "app_secret": "test-secret",
+        "redirect_uri": "https://example.test/api/v1/integrations/meta/callback",
+        "version": "v26.0",
+    }, "state-test")
+    params = parse_qs(urlparse(auth_url).query)
+    assert params["state"] == ["state-test"]
+    assert "pages_read_user_content" in params["scope"][0]
+    assert "instagram_basic" in params["scope"][0]
+
+    media = _normalize_instagram({
+        "id": "media-123", "caption": "Creator reel", "media_type": "VIDEO",
+        "media_product_type": "REELS", "permalink": "https://www.instagram.com/reel/example/",
+    })
+    assert media["media_type"] == "REELS"
+    assert media["permalink"].endswith("/reel/example/")
