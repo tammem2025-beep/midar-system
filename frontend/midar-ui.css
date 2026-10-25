@@ -3203,7 +3203,6 @@ button:not(:disabled):active, .btn:not(:disabled):active { transform:translateY(
 @media(max-width:900px){.meta-feed-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:560px){.meta-feed-grid{grid-template-columns:1fr}.meta-feed-media{aspect-ratio:16/10}.meta-connection-banner{padding:14px}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;scroll-behavior:auto!important;transition-duration:.01ms!important}}
-
 /* Same-release visual patch: accessible dropdown and mobile Reels feed. */
 .account-menu { z-index: 1000; transform-origin: top right; }
 .account-menu [role="menuitem"] { min-height: 42px; border-radius: 10px; text-align: start; transition: background-color .16s ease, color .16s ease, transform .16s ease; }
