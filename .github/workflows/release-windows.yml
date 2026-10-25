@@ -82,11 +82,15 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      - name: Attach installer to GitHub release
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Publish installer on GitHub Releases
+        if: startsWith(github.ref, 'refs/tags/v') || (github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[publish-release]'))
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'v0.22.0' }}
+          target_commitish: ${{ github.sha }}
+          name: M 0.22.0 — Windows x64
           files: installer/output/M-Setup-*-Windows-x64.exe
           generate_release_notes: true
+          fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ github.token }}
