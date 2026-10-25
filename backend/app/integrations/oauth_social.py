@@ -84,7 +84,7 @@ _CONFIG = {
         "redirect_uri": "YOUTUBE_REDIRECT_URI",
         "authorization_endpoint": "https://accounts.google.com/o/oauth2/v2/auth",
         "token_endpoint": "https://oauth2.googleapis.com/token",
-        "scopes": ("openid", "email", "profile", "https://www.googleapis.com/auth/youtube.readonly", "https://www.googleapis.com/auth/youtube.upload"),
+        "scopes": ("openid", "email", "profile", "https://www.googleapis.com/auth/youtube.readonly"),
         "pkce": True,
     },
 }
