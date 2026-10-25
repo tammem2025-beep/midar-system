@@ -61,8 +61,8 @@ jobs:
       - name: Sign desktop executable before packaging when a trusted certificate is configured
         shell: pwsh
         env:
-          WINDOWS_SIGNING_CERT_BASE64: \${{ secrets.WINDOWS_SIGNING_CERT_BASE64 }}
-          WINDOWS_SIGNING_CERT_PASSWORD: \${{ secrets.WINDOWS_SIGNING_CERT_PASSWORD }}
+          WINDOWS_SIGNING_CERT_BASE64: ${{ secrets.WINDOWS_SIGNING_CERT_BASE64 }}
+          WINDOWS_SIGNING_CERT_PASSWORD: ${{ secrets.WINDOWS_SIGNING_CERT_PASSWORD }}
         run: |
           if ([string]::IsNullOrWhiteSpace($env:WINDOWS_SIGNING_CERT_BASE64) -or [string]::IsNullOrWhiteSpace($env:WINDOWS_SIGNING_CERT_PASSWORD)) {
             Write-Host "No trusted certificate configured. M.exe will remain unsigned; SmartScreen warnings may still appear."
@@ -71,7 +71,7 @@ jobs:
           $certPath = Join-Path $env:RUNNER_TEMP "m-signing.pfx"
           [IO.File]::WriteAllBytes($certPath, [Convert]::FromBase64String($env:WINDOWS_SIGNING_CERT_BASE64))
           try {
-            $sdk = \${env:ProgramFiles(x86)}
+            $sdk = ${env:ProgramFiles(x86)}
             $signtool = Get-ChildItem (Join-Path $sdk "Windows Kits\10\bin\*\x64\signtool.exe") -ErrorAction SilentlyContinue | Sort-Object FullName -Descending | Select-Object -First 1
             if (!$signtool) { throw "SignTool was not found on the Windows runner." }
             $appBinary = Get-Item "dist\M\M.exe" -ErrorAction SilentlyContinue
