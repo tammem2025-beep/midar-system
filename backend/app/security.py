@@ -8,9 +8,19 @@ import time
 from typing import Any
 
 APP_ENV = os.getenv("APP_ENV", "development").lower()
-SECRET_KEY = os.getenv("SECRET_KEY", "dev-only-change-this-secret-before-any-real-use")
-if APP_ENV == "production" and (SECRET_KEY == "dev-only-change-this-secret-before-any-real-use" or len(SECRET_KEY) < 32):
-    raise RuntimeError("In production, set a random SECRET_KEY of at least 32 characters.")
+_INSECURE_PLACEHOLDER = "dev-only-change-this-secret-before-any-real-use"
+_configured_secret = os.getenv("SECRET_KEY", "").strip()
+
+if APP_ENV == "production":
+    if len(_configured_secret) < 32 or _configured_secret == _INSECURE_PLACEHOLDER:
+        raise RuntimeError("In production, set a random SECRET_KEY of at least 32 characters.")
+    SECRET_KEY = _configured_secret
+elif not _configured_secret or _configured_secret == _INSECURE_PLACEHOLDER:
+    # Never silently reuse a publicly known signing key. Local tokens expire on
+    # process restart if the operator has not configured a persistent .env secret.
+    SECRET_KEY = secrets.token_urlsafe(48)
+else:
+    SECRET_KEY = _configured_secret
 TOKEN_TTL_SECONDS = int(os.getenv("TOKEN_TTL_SECONDS", "43200"))
 
 
