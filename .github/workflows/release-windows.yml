@@ -131,7 +131,7 @@ jobs:
           Copy-Item -Path "dist\M\*" -Destination $portableRoot -Recurse -Force
           Set-Content -LiteralPath (Join-Path $portableRoot "portable-mode.flag") -Value "M-PORTABLE-DATA-V1" -Encoding Ascii
           New-Item -ItemType Directory -Path "installer\output" -Force | Out-Null
-          $archive = "installer\output\M-Portable-0.23.0-Windows-x64.zip"
+          $archive = "installer\output\M-Portable-0.23.1-Windows-x64.zip"
           Compress-Archive -Path "$portableRoot\*" -DestinationPath $archive -CompressionLevel Optimal -Force
           if (!(Test-Path $archive)) { throw "Portable ZIP was not created." }
           Write-Host "Built portable package: $archive"
@@ -141,7 +141,7 @@ jobs:
         run: |
           $targets = @()
           $installer = Get-ChildItem "installer\output\M-Setup-*-Windows-x64.exe" | Select-Object -First 1
-          $portable = Get-ChildItem "installer\output\M-Portable-0.23.0-Windows-x64.zip" | Select-Object -First 1
+          $portable = Get-ChildItem "installer\output\M-Portable-0.23.1-Windows-x64.zip" | Select-Object -First 1
           if ($installer) { $targets += $installer }
           if ($portable) { $targets += $portable }
           if ($targets.Count -lt 2) { throw "Expected installer and portable ZIP before writing checksums." }
@@ -156,7 +156,7 @@ jobs:
         with:
           name: M-Windows-x64-Portable
           path: |
-            installer/output/M-Portable-0.23.0-Windows-x64.zip
+            installer/output/M-Portable-0.23.1-Windows-x64.zip
             installer/output/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 30
@@ -175,12 +175,12 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v') || (github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[publish-release]'))
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'v0.23.0' }}
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'v0.23.1' }}
           target_commitish: ${{ github.sha }}
-          name: M 0.23.0 — Windows x64
+          name: M 0.23.1 — Windows x64
           files: |
             installer/output/M-Setup-*-Windows-x64.exe
-            installer/output/M-Portable-0.23.0-Windows-x64.zip
+            installer/output/M-Portable-0.23.1-Windows-x64.zip
             installer/output/SHA256SUMS.txt
           overwrite_files: true
           generate_release_notes: true
