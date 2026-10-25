@@ -5,6 +5,7 @@ from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import csv
 import hashlib
+import math
 import io
 import json
 import logging
@@ -111,7 +112,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="M API",
     description="M API — Manage. Connect. Grow. يتوفر حاليًا تكامل Telegram محدود للنشر النصي بعد التحقق من القناة.",
-    version="0.21.1",
+    version="0.22.0",
     lifespan=lifespan,
 )
 
@@ -303,12 +304,43 @@ def login_keys(email: str, ip: str) -> tuple[str, str]:
     return rate_key(f"account|{email}"), rate_key(f"ip|{ip}")
 
 
+def _login_throttle_wait_seconds(db: Session, key_hash: str, count: int, limit: int, cutoff: datetime) -> int:
+    # Find the failure whose expiration will bring the rolling count below its
+    # limit. A fixed full-window Retry-After unnecessarily locks out users whose
+    # oldest failures are already close to expiring.
+    offset = max(0, count - limit)
+    oldest_needed = db.scalar(
+        select(AuthFailure.created_at)
+        .where(AuthFailure.key_hash == key_hash, AuthFailure.created_at >= cutoff)
+        .order_by(AuthFailure.created_at.asc())
+        .offset(offset)
+        .limit(1)
+    )
+    if oldest_needed is None:
+        return 1
+    if oldest_needed.tzinfo is None:
+        oldest_needed = oldest_needed.replace(tzinfo=timezone.utc)
+    expires_at = oldest_needed + timedelta(minutes=LOGIN_WINDOW_MINUTES)
+    return max(1, math.ceil((expires_at - utcnow()).total_seconds()))
+
+
 def check_login_throttle(db: Session, account_key: str, ip_key: str):
     cutoff = utcnow() - timedelta(minutes=LOGIN_WINDOW_MINUTES)
     account_count = db.scalar(select(func.count(AuthFailure.id)).where(AuthFailure.key_hash == account_key, AuthFailure.created_at >= cutoff)) or 0
     ip_count = db.scalar(select(func.count(AuthFailure.id)).where(AuthFailure.key_hash == ip_key, AuthFailure.created_at >= cutoff)) or 0
-    if account_count >= LOGIN_ACCOUNT_LIMIT or ip_count >= LOGIN_IP_LIMIT:
-        raise HTTPException(status_code=429, detail=f"محاولات دخول كثيرة. حاول بعد {LOGIN_WINDOW_MINUTES} دقيقة.", headers={"Retry-After": str(LOGIN_WINDOW_MINUTES * 60)})
+    waits = []
+    if account_count >= LOGIN_ACCOUNT_LIMIT:
+        waits.append(_login_throttle_wait_seconds(db, account_key, account_count, LOGIN_ACCOUNT_LIMIT, cutoff))
+    if ip_count >= LOGIN_IP_LIMIT:
+        waits.append(_login_throttle_wait_seconds(db, ip_key, ip_count, LOGIN_IP_LIMIT, cutoff))
+    if waits:
+        retry_after = max(waits)
+        wait_minutes = max(1, math.ceil(retry_after / 60))
+        raise HTTPException(
+            status_code=429,
+            detail=f"محاولات دخول كثيرة. حاول بعد {wait_minutes} دقيقة.",
+            headers={"Retry-After": str(retry_after)},
+        )
 
 
 def record_login_failure(db: Session, account_key: str, ip_key: str):
@@ -1608,6 +1640,22 @@ def delete_media(asset_id: str, ctx: AuthContext = Depends(get_context), db: Ses
     return Response(status_code=204)
 
 
+def _csv_safe_cell(value: Any) -> Any:
+    """Prefix spreadsheet formula-leading text while preserving numeric cells."""
+    if value is None or isinstance(value, (int, float)):
+        return value
+    text_value = str(value)
+    # Excel/LibreOffice can interpret formula prefixes even after whitespace.
+    # Prefix an apostrophe to untrusted text when the first non-space character
+    # is one of the spreadsheet formula operators.
+    first_significant = text_value.lstrip(" \t\r\n\u00a0")[:1]
+    if first_significant in {"=", "+", "-", "@"}:
+        return "'" + text_value
+    if text_value.startswith(("\t", "\r", "\n")):
+        return "'" + text_value
+    return text_value
+
+
 @app.get(f"{API_PREFIX}/exports/contacts.csv")
 def export_contacts(ctx: AuthContext = Depends(get_context), db: Session = Depends(get_db)):
     require_roles(ctx, {"owner", "admin", "support"})
@@ -1618,7 +1666,7 @@ def export_contacts(ctx: AuthContext = Depends(get_context), db: Session = Depen
     writer = csv.writer(buffer)
     writer.writerow(["الاسم", "الشركة", "البريد الإلكتروني", "الهاتف", "المصدر", "المرحلة", "قيمة الفرصة", "موعد المتابعة", "الملاحظات"])
     for item in contacts:
-        writer.writerow([item.name, item.company, item.email or "", item.phone or "", item.source, item.stage, item.value, item.follow_up_at.isoformat() if item.follow_up_at else "", item.notes])
+        writer.writerow([_csv_safe_cell(value) for value in (item.name, item.company, item.email or "", item.phone or "", item.source, item.stage, item.value, item.follow_up_at.isoformat() if item.follow_up_at else "", item.notes)])
     audit(db, ctx, "exported", "contacts", None, {"count": len(contacts)})
     db.commit()
     data = buffer.getvalue().encode("utf-8")
