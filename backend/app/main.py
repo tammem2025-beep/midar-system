@@ -970,7 +970,13 @@ def integration_status(ctx: AuthContext = Depends(get_context), db: Session = De
                 SocialAccount.provider_account_id.is_not(None),
             )) or 0)
             config_ready = bool(get_whatsapp_config())
-            state = "connected" if connected_accounts else "verification_required" if config_ready else "not_configured"
+            webhook_ready = bool(get_whatsapp_webhook_secrets())
+            state = (
+                "connected" if connected_accounts and webhook_ready and config_ready else
+                "connected_webhook_pending" if connected_accounts and config_ready else
+                "connected_configuration_missing" if connected_accounts else
+                "verification_required" if config_ready else "not_configured"
+            )
         elif social_oauth_key:
             connected_accounts = int(db.scalar(select(func.count(SocialAccount.id)).where(
                 SocialAccount.organization_id == ctx.organization.id,
@@ -1021,6 +1027,7 @@ def integration_status(ctx: AuthContext = Depends(get_context), db: Session = De
             "implemented_capabilities": list(definition["implemented_capabilities"]),
             "planned_capabilities": list(definition["planned_capabilities"]),
             "connected_accounts": connected_accounts if (meta_provider or whatsapp_provider or social_oauth_key) else 0,
+            "webhook_ready": bool(get_whatsapp_webhook_secrets()) if whatsapp_provider else None,
             "publish_ready_accounts": publish_ready_accounts if (provider == "Facebook" or social_oauth_key) else 0,
             "supported_actions": (
                 ["verify_channel", "publish_text"] if provider == "Telegram" else
