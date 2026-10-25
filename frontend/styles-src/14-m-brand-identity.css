@@ -1,4 +1,4 @@
-/* M 0.20.0 — brand identity and final UI refinement layer.
+/* M 0.21.0 — brand identity and final UI refinement layer.
    Keep this module last: brand tokens, compact shell, shared components, and theme bridge. */
 :root {
   --m-brand-navy: #0B1020;
@@ -554,3 +554,183 @@ textarea:focus-visible {
 .empty-box .big { color: var(--md-accent); }
 :root[data-theme="light"] .stat-value,
 :root[data-theme="light"] .auth-card h2 { color: var(--md-text); }
+
+
+/* M 0.21.0 — refined brand presentation, form hierarchy, and keyboard accessibility. */
+.auth-page {
+  min-height: 100vh;
+  min-height: 100svh;
+  display: grid;
+  place-items: center;
+  padding: clamp(18px, 4vw, 48px);
+  overflow: hidden;
+  isolation: isolate;
+}
+.auth-page::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 44rem 28rem at 50% -12%, color-mix(in srgb, var(--m-brand-cyan) 10%, transparent), transparent 72%),
+    radial-gradient(ellipse 32rem 25rem at 100% 100%, color-mix(in srgb, var(--m-brand-violet) 9%, transparent), transparent 74%);
+}
+.auth-card {
+  position: relative;
+  width: min(100%, 470px);
+  padding: clamp(24px, 4vw, 40px);
+  border: 1px solid color-mix(in srgb, var(--md-border-strong) 72%, transparent);
+  border-radius: 26px;
+  background: linear-gradient(150deg, var(--md-surface-raised), var(--md-surface) 58%);
+  box-shadow: 0 28px 90px rgba(0,0,0,.23), inset 0 1px 0 rgba(255,255,255,.035);
+}
+.auth-brand {
+  width: fit-content;
+  max-width: 100%;
+  margin: 0 auto 25px;
+  padding: 0 0 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  border-bottom: 1px solid var(--md-border);
+}
+.auth-brand .logo {
+  width: 62px;
+  height: 62px;
+  flex-basis: 62px;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--md-accent) 7%, transparent) !important;
+}
+.auth-brand-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+.auth-brand-copy h1 {
+  margin: 0;
+  font-size: clamp(34px, 5vw, 42px);
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: .015em;
+  background: var(--m-brand-gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.auth-brand-copy p { display: none; }
+.auth-brand-copy .brand-tagline {
+  display: block;
+  margin-top: 8px;
+  color: var(--md-text-muted);
+  font-size: 10px;
+  font-weight: 750;
+  line-height: 1.5;
+  letter-spacing: .055em;
+  white-space: nowrap;
+}
+.brand .brand-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+.brand small.brand-tagline {
+  display: block;
+  max-width: 100%;
+  margin-top: 5px;
+  color: #B8C6DE;
+  font-size: 8px;
+  font-weight: 750;
+  line-height: 1.5;
+  letter-spacing: .025em;
+  white-space: nowrap;
+}
+.brand b {
+  color: #F4F7FF;
+  font-size: 22px;
+  line-height: 1.05;
+  letter-spacing: .02em;
+}
+.auth-eyebrow {
+  width: fit-content;
+  max-width: 100%;
+  margin: 0 auto 15px;
+  padding: 7px 11px;
+  border: 1px solid color-mix(in srgb, var(--md-accent) 24%, var(--md-border));
+  border-radius: 999px;
+  background: var(--md-accent-soft);
+  color: var(--md-text-muted);
+  font-size: 11px;
+  text-align: center;
+}
+.auth-card h2 { margin-top: 0; font-size: clamp(23px, 3vw, 28px); letter-spacing: -.025em; }
+.auth-card .field { margin-bottom: 16px; }
+.auth-card .field label { margin-bottom: 7px; font-weight: 650; }
+.auth-card .field input {
+  min-height: 47px;
+  padding-inline: 13px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--md-surface) 76%, var(--md-page));
+}
+.auth-card .field input:focus {
+  border-color: var(--md-accent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--md-accent) 16%, transparent);
+}
+.auth-submit {
+  width: 100%;
+  min-height: 47px;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 800;
+  background: linear-gradient(110deg, var(--md-accent), var(--md-action));
+  border-color: transparent;
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--md-accent) 18%, transparent);
+}
+.auth-submit:hover { filter: brightness(1.07); transform: translateY(-1px); }
+.auth-footnote { margin-top: 20px; font-size: 10px; line-height: 1.9; }
+.sidebar .brand { align-items: center; }
+.sidebar .brand .logo { flex-basis: 44px; width: 44px; height: 44px; }
+.sidebar .brand .brand-tagline { font-size: 8px; letter-spacing: .015em; }
+.workspace-card {
+  border: 1px solid var(--midar-sidebar-border);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--md-accent) 9%, #142039), rgba(10,17,31,.58));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.025);
+}
+.nav button, .btn, .topbar-action, .user-pill, .icon-button {
+  transition: background-color .16s ease, border-color .16s ease, box-shadow .16s ease, transform .16s ease, color .16s ease;
+}
+.nav button:focus-visible, .btn:focus-visible, .topbar-action:focus-visible,
+.user-pill:focus-visible, .icon-button:focus-visible {
+  outline: 2px solid var(--md-focus);
+  outline-offset: 3px;
+}
+.card, .dc-panel, .settings-panel-v2, .settings-provider, .provider-card {
+  border-color: var(--md-border);
+  box-shadow: var(--md-shadow-sm);
+}
+.card:hover, .settings-panel-v2:hover {
+  border-color: color-mix(in srgb, var(--md-accent) 25%, var(--md-border));
+}
+.table-wrap { border-radius: 0 0 var(--md-radius-lg) var(--md-radius-lg); }
+@media (max-width: 760px) {
+  .auth-page { padding: 16px; }
+  .auth-card { width: min(100%, 470px); padding: 23px 20px; border-radius: 22px; }
+  .auth-brand { gap: 12px; margin-bottom: 22px; padding-bottom: 18px; }
+  .auth-brand .logo { width: 52px; height: 52px; flex-basis: 52px; }
+  .auth-brand-copy h1 { font-size: 36px; }
+  .auth-brand-copy .brand-tagline { font-size: 9px; }
+  .brand small.brand-tagline { font-size: 7.5px; }
+}
+@media (max-width: 380px) {
+  .auth-brand { gap: 9px; }
+  .auth-brand .logo { width: 46px; height: 46px; flex-basis: 46px; }
+  .auth-brand-copy h1 { font-size: 31px; }
+  .auth-brand-copy .brand-tagline { font-size: 8px; letter-spacing: .025em; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .nav button, .btn, .topbar-action, .user-pill, .icon-button { transition: none !important; }
+  .auth-submit:hover { transform: none; }
+}
