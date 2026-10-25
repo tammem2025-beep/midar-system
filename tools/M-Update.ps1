@@ -1,6 +1,6 @@
 # M updater for the existing Windows installation.
-# Downloads the latest successful Windows artifact for the exact current main commit,
-# verifies the installer SHA-256, backs up local data, updates in place, then launches M.
+# Downloads the latest stable public GitHub Release installer (not an Actions artifact),
+# verifies SHA-256, backs up local data, updates in place, then launches M.
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
@@ -27,80 +27,71 @@ $Succeeded = $false
 try {
     Write-Host ''
     Write-Host 'M updater - existing installation' -ForegroundColor Cyan
-    Write-Host 'Checking the current GitHub version and Windows build...' -ForegroundColor Gray
+    Write-Host 'Checking the latest stable public GitHub release...' -ForegroundColor Gray
 
-    $mainRef = Invoke-RestMethod -Uri "$ApiBase/git/ref/heads/main" -Headers $Headers -Method Get
-    $mainSha = [string]$mainRef.object.sha
-    if ($mainSha -notmatch '^[a-fA-F0-9]{40}$') {
-        throw 'GitHub returned an invalid main commit SHA. No changes were made.'
+    # Prefer the public GitHub Release assets. Actions artifact download URLs can return
+    # 401 Unauthorized without an authenticated GitHub session, even for a public repository.
+    $release = Invoke-RestMethod -Uri "$ApiBase/releases/latest" -Headers $Headers -Method Get
+    $releaseTag = [string]$release.tag_name
+    if ($release.draft -or $release.prerelease -or $releaseTag -notmatch '^v(?<version>\d+\.\d+\.\d+)$') {
+        throw 'GitHub did not return a valid stable M release. No local files were changed.'
     }
-
-    $runsUri = "$ApiBase/actions/workflows/release-windows.yml/runs?branch=main&status=success&per_page=50"
-    $runList = Invoke-RestMethod -Uri $runsUri -Headers $Headers -Method Get
-    $matchingRuns = @($runList.workflow_runs | Where-Object {
-        $_.head_sha -eq $mainSha -and $_.status -eq 'completed' -and $_.conclusion -eq 'success'
-    } | Sort-Object -Property created_at -Descending)
-    if ($matchingRuns.Count -eq 0) {
-        throw 'There is no successful Windows build for the latest main commit yet. Open https://github.com/tammem2025-beep/midar-system/actions and retry after the Windows build succeeds.'
+    $version = $Matches['version']
+    $installerName = "M-Setup-$version-Windows-x64.exe"
+    $releaseAssets = @($release.assets)
+    $installerAssets = @($releaseAssets | Where-Object { $_.name -eq $installerName })
+    $checksumAssets = @($releaseAssets | Where-Object { $_.name -eq 'SHA256SUMS.txt' })
+    if ($installerAssets.Count -ne 1 -or $checksumAssets.Count -ne 1) {
+        throw "The latest release $releaseTag is missing its expected installer or SHA256SUMS.txt. No local files were changed."
     }
-    $run = $matchingRuns[0]
-
-    $artifactsUri = "$ApiBase/actions/runs/$($run.id)/artifacts?per_page=100"
-    $artifactList = Invoke-RestMethod -Uri $artifactsUri -Headers $Headers -Method Get
-    $matchingArtifacts = @($artifactList.artifacts | Where-Object {
-        $_.name -eq 'M-Windows-x64-Installer' -and $_.expired -eq $false
-    } | Sort-Object -Property created_at -Descending)
-    if ($matchingArtifacts.Count -eq 0) {
-        throw 'The successful build has no unexpired installer artifact. No files were changed.'
-    }
-    $artifact = $matchingArtifacts[0]
-    if ($artifact.workflow_run.head_sha -and $artifact.workflow_run.head_sha -ne $mainSha) {
-        throw 'The installer artifact does not match the current main commit. Refusing to install an older build.'
+    $installerAsset = $installerAssets[0]
+    $checksumAsset = $checksumAssets[0]
+    $expectedAssetPrefix = "/$Owner/$Repo/releases/download/$releaseTag/"
+    foreach ($asset in @($installerAsset, $checksumAsset)) {
+        $assetUri = $null
+        if (-not [Uri]::TryCreate([string]$asset.browser_download_url, [UriKind]::Absolute, [ref]$assetUri) -or
+            $assetUri.Scheme -ne 'https' -or $assetUri.Host -ne 'github.com' -or
+            -not $assetUri.AbsolutePath.StartsWith($expectedAssetPrefix, [StringComparison]::Ordinal)) {
+            throw 'GitHub returned a release asset URL outside the official M release path. Refusing to download it.'
+        }
     }
 
     New-Item -ItemType Directory -Path $TempRoot -Force | Out-Null
-    $artifactZip = Join-Path $TempRoot 'M-Windows-x64-Installer-artifact.zip'
-    $extractDir = Join-Path $TempRoot 'extracted'
-    New-Item -ItemType Directory -Path $extractDir -Force | Out-Null
+    $installerPath = Join-Path $TempRoot $installerName
+    $checksumPath = Join-Path $TempRoot 'SHA256SUMS.txt'
 
-    Write-Host "Downloading Windows build from run $($run.id) ..." -ForegroundColor Gray
-    $downloaded = $false
-    for ($attempt = 1; $attempt -le 3; $attempt++) {
-        try {
-            Invoke-WebRequest -Uri $artifact.archive_download_url -Headers $Headers -OutFile $artifactZip -UseBasicParsing
-            if ((Test-Path -LiteralPath $artifactZip) -and (Get-Item -LiteralPath $artifactZip).Length -gt 5000000) {
-                $downloaded = $true
-                break
-            }
-            throw 'The downloaded artifact was unexpectedly small.'
-        } catch {
-            if ($attempt -eq 3) { throw }
-            Start-Sleep -Seconds 2
-        }
+    Write-Host "Downloading public M release $releaseTag ..." -ForegroundColor Gray
+    # browser_download_url is a public Releases URL; it does not use the Actions artifact endpoint.
+    Invoke-WebRequest -Uri $installerAsset.browser_download_url -Headers @{ 'User-Agent' = 'M-Update-PowerShell' } -OutFile $installerPath -UseBasicParsing
+    Invoke-WebRequest -Uri $checksumAsset.browser_download_url -Headers @{ 'User-Agent' = 'M-Update-PowerShell' } -OutFile $checksumPath -UseBasicParsing
+
+    if (-not (Test-Path -LiteralPath $installerPath -PathType Leaf) -or
+        (Get-Item -LiteralPath $installerPath).Length -lt 5000000) {
+        throw 'The downloaded installer is missing or unexpectedly small.'
     }
-    if (-not $downloaded) { throw 'Could not download the installer artifact.' }
+    if ($installerAsset.size -and (Get-Item -LiteralPath $installerPath).Length -ne [long]$installerAsset.size) {
+        throw 'The installer size differs from GitHub release metadata. Refusing to run it.'
+    }
+    if (-not (Test-Path -LiteralPath $checksumPath -PathType Leaf) -or
+        (Get-Item -LiteralPath $checksumPath).Length -gt 16384) {
+        throw 'The release checksum file is missing or unexpectedly large.'
+    }
 
-    Expand-Archive -LiteralPath $artifactZip -DestinationPath $extractDir -Force
-    $installer = Get-ChildItem -LiteralPath $extractDir -Filter 'M-Setup-*-Windows-x64.exe' -File -Recurse | Select-Object -First 1
-    $checksumFile = Get-ChildItem -LiteralPath $extractDir -Filter 'SHA256SUMS.txt' -File -Recurse | Select-Object -First 1
-    if (-not $installer) { throw 'The artifact did not contain the M Windows installer.' }
-    if (-not $checksumFile) { throw 'The artifact did not contain SHA256SUMS.txt; refusing to run an unverified installer.' }
-
-    $escapedName = [Regex]::Escape($installer.Name)
-    $checksumLine = Get-Content -LiteralPath $checksumFile.FullName | Where-Object {
+    $escapedName = [Regex]::Escape($installerName)
+    $checksumLine = Get-Content -LiteralPath $checksumPath | Where-Object {
         $_ -match ('^([a-fA-F0-9]{64})\s+\*?' + $escapedName + '$')
     } | Select-Object -First 1
     if (-not $checksumLine -or $checksumLine -notmatch ('^([a-fA-F0-9]{64})\s+\*?' + $escapedName + '$')) {
-        throw 'The installer has no matching SHA-256 entry; refusing to run it.'
+        throw 'The official release has no matching SHA-256 entry for the installer; refusing to run it.'
     }
     $expectedHash = $Matches[1].ToUpperInvariant()
-    $actualHash = (Get-FileHash -LiteralPath $installer.FullName -Algorithm SHA256).Hash.ToUpperInvariant()
+    $actualHash = (Get-FileHash -LiteralPath $installerPath -Algorithm SHA256).Hash.ToUpperInvariant()
     if ($actualHash -ne $expectedHash) {
         throw "Installer SHA-256 verification failed. Expected $expectedHash, got $actualHash."
     }
-
+    $installer = Get-Item -LiteralPath $installerPath
     Write-Host "Verified installer: $($installer.Name)" -ForegroundColor Green
-    Write-Host "Verified source commit: $mainSha" -ForegroundColor Gray
+    Write-Host "Verified release: $releaseTag" -ForegroundColor Gray
 
     $running = @(Get-Process -Name 'M' -ErrorAction SilentlyContinue)
     if ($running.Count -gt 0) {
@@ -186,7 +177,7 @@ try {
         Write-Host 'M was updated successfully. Open it from the Windows Start menu if it did not launch automatically.' -ForegroundColor Green
     }
     if ($backupPath) { Write-Host "Data backup: $backupPath" -ForegroundColor Gray }
-    Write-Host "Build commit: $mainSha" -ForegroundColor Gray
+    Write-Host "Installed release: $releaseTag" -ForegroundColor Gray
     Write-Host 'Note: this script does not disable Windows SmartScreen or Defender.' -ForegroundColor Yellow
     $Succeeded = $true
 } catch {

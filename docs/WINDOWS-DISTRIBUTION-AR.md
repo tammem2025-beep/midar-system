@@ -65,3 +65,19 @@ PWA هي واجهة تطبيق الويب المثبتة؛ لا تعني أن ا
 بعد نجاح سير عمل GitHub Actions، افتح تبويب **Artifacts** في آخر تشغيل ونزّل `M-Windows-x64-Portable`. فكّ ZIP كاملًا في مجلد قابل للكتابة ثم شغّل `M.exe`. يحفظ هذا التشغيل بياناته داخل `M-Portable-Data` المجاور للبرنامج، ويُبقي تشغيل المثبّت المعتاد على `%LOCALAPPDATA%\\M\\` دون تغيير. لا تشغّل النسخة المحمولة من `Program Files` أو مجلد محمي من الكتابة، ولا تحذف مجلد بياناتها عند تحديث ملفات البرنامج.
 
 إن لم تظهر الحزمة في Artifacts فهذا يعني أن تشغيل البناء لم يُكمل خطوة التغليف بنجاح؛ راجع سجل GitHub Actions. الحزمة مجلد ZIP لويندوز x64 وليست EXE منفردًا، ووجودها لا يثبت توقيعًا رقميًا موثوقًا. إذا لم يضبط مالك المستودع شهادة Authenticode في Secrets فربما يستمر SmartScreen في عرض تحذير.
+
+
+## إصلاح خطأ 401 في أداة التحديث
+
+أداة التحديث تستخدم الآن ملف المثبّت من صفحة **GitHub Releases** العامة، بدل تنزيل Actions Artifact الذي قد يرجع `401 Unauthorized`. تنزّل الأداة ملف `M-Setup-x.y.z-Windows-x64.exe` و`SHA256SUMS.txt` من الإصدار المستقر الأحدث، وتتحقق من SHA-256 قبل تثبيت أي ملف. لا تتطلب تسجيل الدخول إلى GitHub ولا تعطّل SmartScreen أو Defender.
+
+لتشغيل أداة التحديث الرسمية من PowerShell:
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass -Force
+$script = Join-Path $env:TEMP 'M-Update.ps1'
+Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/tammem2025-beep/midar-system/main/tools/M-Update.ps1' -OutFile $script -UseBasicParsing
+if ((Get-Content -LiteralPath $script -Raw) -notmatch 'M updater - existing installation' -or (Get-Content -LiteralPath $script -Raw) -notmatch 'Installer SHA-256 verification failed') { throw 'Update script verification failed; not running.' }
+& $script
+if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) { throw 'M update failed; review the error above.' }
+```
