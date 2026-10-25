@@ -1,4 +1,4 @@
-"""Meta Graph API helpers for server-side, read-only social account connections."""
+"""Meta Graph API helpers for verified Facebook Page and Instagram connections."""
 from __future__ import annotations
 import os
 import re
@@ -7,10 +7,15 @@ import httpx
 
 META_AUTH_ENDPOINT = "https://www.facebook.com/{version}/dialog/oauth"
 META_GRAPH_ROOT = "https://graph.facebook.com"
-META_SCOPES = ("pages_show_list", "pages_read_engagement", "pages_read_user_content", "instagram_basic")
+META_SCOPES = ("pages_show_list", "pages_read_engagement", "pages_read_user_content", "instagram_basic", "pages_manage_posts")
 
 class MetaGraphError(RuntimeError):
     """Safe provider failure that never includes tokens or raw provider responses."""
+
+
+class MetaDeliveryUnknown(MetaGraphError):
+    """Meta may have accepted a publication but the response did not confirm it."""
+
 
 def get_meta_config() -> dict[str, str] | None:
     app_id = os.getenv("META_APP_ID", "").strip()
@@ -92,6 +97,24 @@ async def exchange_for_long_lived_token(config: dict[str, str], short_lived_toke
         raise MetaGraphError("Meta did not return a long-lived user token.")
     return payload
 
+async def list_granted_permissions(config: dict[str, str], user_token: str) -> tuple[str, ...]:
+    """Return only permissions Meta explicitly marks as granted for this user."""
+    payload = await _get_json(f"{META_GRAPH_ROOT}/{config['version']}/me/permissions", {
+        "access_token": user_token,
+    })
+    items = payload.get("data")
+    if not isinstance(items, list):
+        raise MetaGraphError("Meta returned an unexpected permissions response.")
+    granted = {
+        str(item.get("permission"))
+        for item in items
+        if isinstance(item, dict)
+        and item.get("status") == "granted"
+        and isinstance(item.get("permission"), str)
+    }
+    return tuple(scope for scope in META_SCOPES if scope in granted)
+
+
 async def list_managed_pages(config: dict[str, str], user_token: str) -> list[dict]:
     payload = await _get_json(f"{META_GRAPH_ROOT}/{config['version']}/me/accounts", {
         "access_token": user_token,
@@ -101,6 +124,47 @@ async def list_managed_pages(config: dict[str, str], user_token: str) -> list[di
     if not isinstance(pages, list):
         raise MetaGraphError("Meta returned an unexpected managed Pages response.")
     return [item for item in pages if isinstance(item, dict) and item.get("id") and item.get("name") and item.get("access_token")]
+
+
+async def publish_page_text(config: dict[str, str], page_id: str, page_token: str, message: str) -> dict[str, str]:
+    """Publish plain text to a verified Facebook Page; never retry ambiguous sends."""
+    clean_page_id = (page_id or "").strip()
+    clean_token = (page_token or "").strip()
+    clean_message = (message or "").strip()
+    if not re.fullmatch(r"[0-9]{1,32}", clean_page_id):
+        raise MetaGraphError("The Facebook Page ID is invalid.")
+    if not clean_token:
+        raise MetaGraphError("The Facebook Page credential is missing.")
+    if not clean_message:
+        raise MetaGraphError("Facebook Page post text cannot be empty.")
+    if len(clean_message) > 60000:
+        raise MetaGraphError("Facebook Page post text exceeds the supported 60000-character limit.")
+    url = f"{META_GRAPH_ROOT}/{config['version']}/{clean_page_id}/feed"
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(18.0, connect=6.0), follow_redirects=False) as client:
+            response = await client.post(
+                url,
+                data={"message": clean_message, "access_token": clean_token},
+                headers={"Accept": "application/json"},
+            )
+    except (httpx.TimeoutException, httpx.TransportError) as exc:
+        raise MetaDeliveryUnknown("Meta publication outcome could not be confirmed; do not resend automatically.") from exc
+
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        if response.status_code >= 500:
+            raise MetaDeliveryUnknown("Meta returned an unreadable server response; publication may be uncertain.") from exc
+        raise MetaGraphError("Meta returned an invalid publication response.") from exc
+    if response.status_code >= 500:
+        raise MetaDeliveryUnknown("Meta returned a server error; publication may be uncertain.")
+    if response.status_code >= 400 or not isinstance(payload, dict) or payload.get("error"):
+        raise MetaGraphError(_error_message(response))
+    remote_id = payload.get("id") or payload.get("post_id")
+    if not isinstance(remote_id, (str, int)) or not str(remote_id).strip():
+        raise MetaDeliveryUnknown("Meta did not return a post ID; publication outcome is uncertain.")
+    return {"id": str(remote_id), "post_id": str(payload.get("post_id") or remote_id)}
+
 
 async def _graph_edge(config: dict[str, str], account_id: str, edge: str, token: str, fields: str, limit: int) -> list[dict]:
     payload = await _get_json(f"{META_GRAPH_ROOT}/{config['version']}/{account_id}/{edge}", {
