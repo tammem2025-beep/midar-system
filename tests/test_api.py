@@ -7,7 +7,11 @@ is intentionally not simulated.
 from __future__ import annotations
 
 import os
+import csv
+import io
 import logging
+import subprocess
+from datetime import timedelta
 import re
 import tempfile
 from pathlib import Path
@@ -28,7 +32,7 @@ from starlette.requests import Request as StarletteRequest
 from app.db import Base, SessionLocal, engine
 import app.main as main_module
 from app.main import ROLE_PERMISSIONS, ROLE_READ_PERMISSIONS, ALL_AREAS, app
-from app.models import AuditLog, IntegrationCredential, Membership, Organization, SocialAccount, User
+from app.models import AuditLog, AuthFailure, IntegrationCredential, Membership, Organization, SocialAccount, User, utcnow
 from app.security import hash_password
 
 
@@ -1340,3 +1344,88 @@ def test_expired_oauth_state_cleans_browser_binding_and_reports_reason(client):
         assert db.query(OAuthTransaction).count() == 0
         assert db.query(ProviderOAuthBinding).count() == 0
 
+
+
+def test_contacts_csv_neutralizes_spreadsheet_formula_cells(client: TestClient):
+    headers = create_owner(client, "csv-formula-owner@example.com")
+    response = client.post("/api/v1/contacts", headers=headers, json={
+        "name": '=HYPERLINK("https://evil.example","open")',
+        "company": "+SUM(1,1)",
+        "email": "@SUM(1,1)",
+        "phone": "12345",
+        "source": "-IMPORT",
+        "stage": "new",
+        "value": 1500,
+        "notes": "\t=cmd|' /C calc'!A0",
+    })
+    assert response.status_code == 201, response.text
+    exported = client.get("/api/v1/exports/contacts.csv", headers=headers)
+    assert exported.status_code == 200
+    assert exported.headers["cache-control"] == "private, no-store"
+    rows = list(csv.reader(io.StringIO(exported.content.decode("utf-8-sig"))))
+    row = rows[1]
+    assert row[0].startswith("'=")
+    assert row[1].startswith("'+")
+    assert row[2].startswith("'@")
+    assert row[4].startswith("'-")
+    assert row[8].startswith("'\t=")
+    assert row[6] == "1500.0" or row[6] == "1500"
+
+
+def test_login_throttle_retry_after_tracks_rolling_window_expiry(client: TestClient, monkeypatch):
+    from app.db import SessionLocal
+
+    monkeypatch.setattr(main_module, "LOGIN_ACCOUNT_LIMIT", 3)
+    monkeypatch.setattr(main_module, "LOGIN_IP_LIMIT", 100)
+    monkeypatch.setattr(main_module, "LOGIN_WINDOW_MINUTES", 15)
+    create_owner(client, "throttle-window@example.com")
+    for _ in range(3):
+        failed = client.post("/api/v1/auth/login", json={
+            "email": "throttle-window@example.com",
+            "password": "incorrect-password-value",
+        })
+        assert failed.status_code == 401
+
+    account_key, ip_key = main_module.login_keys("throttle-window@example.com", "testclient")
+    almost_expired = utcnow() - timedelta(minutes=14, seconds=50)
+    with SessionLocal() as db:
+        db.query(AuthFailure).filter(AuthFailure.key_hash.in_([account_key, ip_key])).update(
+            {AuthFailure.created_at: almost_expired}, synchronize_session=False
+        )
+        db.commit()
+
+    limited = client.post("/api/v1/auth/login", json={
+        "email": "throttle-window@example.com",
+        "password": "incorrect-password-value",
+    })
+    assert limited.status_code == 429
+    retry_after = int(limited.headers["Retry-After"])
+    assert 1 <= retry_after <= 15, f"expected precise remaining window, got {retry_after}"
+    assert "حاول بعد" in limited.json()["detail"]
+
+
+def test_unconfigured_development_secret_is_random_and_production_fails_closed():
+    code = (
+        "import sys; sys.path.insert(0, 'backend'); "
+        "import app.security as s; "
+        "assert len(s.SECRET_KEY) >= 32; "
+        "assert s.SECRET_KEY != 'dev-only-change-this-secret-before-any-real-use'; "
+        "print('secure-development-secret')"
+    )
+    env = os.environ.copy()
+    env.pop("SECRET_KEY", None)
+    env["APP_ENV"] = "development"
+    development = subprocess.run(
+        [sys.executable, "-c", code], cwd=ROOT, env=env, capture_output=True, text=True
+    )
+    assert development.returncode == 0, development.stderr
+    assert "secure-development-secret" in development.stdout
+
+    env["APP_ENV"] = "production"
+    env["SECRET_KEY"] = "short"
+    production = subprocess.run(
+        [sys.executable, "-c", "import sys; sys.path.insert(0, 'backend'); import app.security"],
+        cwd=ROOT, env=env, capture_output=True, text=True,
+    )
+    assert production.returncode != 0
+    assert "random SECRET_KEY" in production.stderr
