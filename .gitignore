@@ -23,3 +23,13 @@ data/*
 *.pid
 .DS_Store
 Thumbs.db
+
+# Browser testing and local demonstration
+node_modules/
+test-results/
+playwright-report/
+demo-data/
+installer/output/
+dist/
+build/
+*.spec
