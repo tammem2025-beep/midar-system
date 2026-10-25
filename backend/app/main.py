@@ -920,11 +920,12 @@ def integration_status(ctx: AuthContext = Depends(get_context), db: Session = De
         keys = list(definition["required_environment"])
         present = all(bool(os.getenv(key, "").strip()) for key in keys) if keys else False
         meta_provider = provider in {"Facebook", "Instagram"}
+        whatsapp_provider = provider == "WhatsApp"
         oauth_provider_keys = {"X": "x", "LinkedIn": "linkedin", "TikTok": "tiktok", "YouTube": "youtube"}
         social_oauth_key = oauth_provider_keys.get(provider)
         implemented = (
             (provider == "Telegram" and definition["implementation_status"] in {"partial", "implemented"})
-            or meta_provider or social_oauth_key is not None
+            or meta_provider or whatsapp_provider or social_oauth_key is not None
         )
         connected_accounts = 0
         publish_ready_accounts = 0
@@ -961,6 +962,15 @@ def integration_status(ctx: AuthContext = Depends(get_context), db: Session = De
                 "connected_read_only" if connected_accounts else
                 ("authorization_required" if config_ready else "not_configured")
             )
+        elif whatsapp_provider:
+            connected_accounts = int(db.scalar(select(func.count(SocialAccount.id)).where(
+                SocialAccount.organization_id == ctx.organization.id,
+                SocialAccount.platform == "WhatsApp",
+                SocialAccount.connection_status == "connected",
+                SocialAccount.provider_account_id.is_not(None),
+            )) or 0)
+            config_ready = bool(get_whatsapp_config())
+            state = "connected" if connected_accounts else "verification_required" if config_ready else "not_configured"
         elif social_oauth_key:
             connected_accounts = int(db.scalar(select(func.count(SocialAccount.id)).where(
                 SocialAccount.organization_id == ctx.organization.id,
@@ -1010,14 +1020,15 @@ def integration_status(ctx: AuthContext = Depends(get_context), db: Session = De
             "description": definition["description_ar"],
             "implemented_capabilities": list(definition["implemented_capabilities"]),
             "planned_capabilities": list(definition["planned_capabilities"]),
-            "connected_accounts": connected_accounts if (meta_provider or social_oauth_key) else 0,
+            "connected_accounts": connected_accounts if (meta_provider or whatsapp_provider or social_oauth_key) else 0,
             "publish_ready_accounts": publish_ready_accounts if (provider == "Facebook" or social_oauth_key) else 0,
             "supported_actions": (
                 ["verify_channel", "publish_text"] if provider == "Telegram" else
+                (["verify_business_number", "send_text", "receive_webhooks"] if provider == "WhatsApp" and connected_accounts else
                 (["account_authorization", "read_page_posts", "read_page_videos"] + (["publish_page_text"] if publish_ready_accounts else [])) if provider == "Facebook" else
                 (["account_authorization", "read_profile"] + (["publish_text"] if publish_ready_accounts else [])) if provider in {"X", "LinkedIn"} else
                 (["account_authorization", "read_profile"] if provider in {"TikTok", "YouTube"} else
-                list(definition["implemented_capabilities"]))
+                list(definition["implemented_capabilities"])))
             ) if implemented else [],
         })
 
@@ -2568,20 +2579,98 @@ def update_conversation(conversation_id: str, data: ConversationUpdate, ctx: Aut
 
 
 @app.post(f"{API_PREFIX}/conversations/{{conversation_id}}/messages", response_model=MessageOut, status_code=201)
-def create_local_message(conversation_id: str, data: MessageCreate, ctx: AuthContext = Depends(get_context), db: Session = Depends(get_db)):
+async def create_local_message(conversation_id: str, data: MessageCreate, ctx: AuthContext = Depends(get_context), db: Session = Depends(get_db)):
     require_write(ctx, "inbox")
-    conversation = db.scalar(select(Conversation).where(Conversation.id == conversation_id, Conversation.organization_id == ctx.organization.id))
+    conversation = db.scalar(select(Conversation).where(
+        Conversation.id == conversation_id, Conversation.organization_id == ctx.organization.id,
+    ))
     if not conversation:
         not_found("المحادثة")
-    # This stores a draft/local note only. Actual provider send/receive requires an approved connector and is deliberately not simulated.
+
+    body = data.body.strip()
+    if conversation.channel == "WhatsApp" and data.direction == "outbound":
+        config = get_whatsapp_config()
+        if config is None:
+            raise HTTPException(status_code=503, detail="إعداد WhatsApp Business غير مكتمل على الخادم.")
+        account = db.scalar(select(SocialAccount).where(
+            SocialAccount.organization_id == ctx.organization.id,
+            SocialAccount.platform == "WhatsApp",
+            SocialAccount.connection_status == "connected",
+            SocialAccount.provider_account_id.is_not(None),
+        ))
+        if account is None:
+            raise HTTPException(status_code=409, detail="تحقق من رقم WhatsApp Business أولًا من صفحة التكاملات.")
+        if not conversation.external_id or not re.fullmatch(r"[0-9]{7,20}", conversation.external_id):
+            raise HTTPException(status_code=422, detail="المحادثة لا تحتوي رقم WhatsApp صالحًا بصيغة دولية.")
+        try:
+            credential = load_provider_credential(
+                db, organization_id=ctx.organization.id, social_account_id=account.id,
+            )
+        except (CredentialStoreError, CredentialScopeError, TokenVaultError) as exc:
+            raise HTTPException(status_code=409, detail="تعذر فك اعتماد WhatsApp المشفر بأمان؛ أعد التحقق من رقم الأعمال.") from exc
+        if credential is None:
+            raise HTTPException(status_code=409, detail="لا يوجد اعتماد WhatsApp مشفر لهذا الرقم؛ أعد التحقق من رقم الأعمال.")
+        try:
+            delivery = await whatsapp_send_text(
+                graph_version=config["graph_version"],
+                phone_number_id=account.provider_account_id,
+                access_token=credential.access_token,
+                recipient=conversation.external_id,
+                text=body,
+            )
+        except WhatsAppDeliveryUnknown as exc:
+            now = utcnow()
+            message = Message(
+                organization_id=ctx.organization.id, conversation_id=conversation.id,
+                direction="outbound", body=body, delivery_status="delivery_unknown", created_at=now,
+            )
+            conversation.last_message_at = now
+            if conversation.status == "closed":
+                conversation.status = "open"
+            db.add(message)
+            db.flush()
+            audit(db, ctx, "whatsapp.message_outcome_unknown", "message", message.id, {
+                "conversation_id": conversation.id, "account_id": account.id,
+            })
+            db.commit()
+            db.refresh(message)
+            raise HTTPException(status_code=502, detail="أرسل M الطلب، لكن WhatsApp لم يؤكد النتيجة. افحص المحادثة قبل أي إعادة محاولة.") from exc
+        except WhatsAppCloudError as exc:
+            raise HTTPException(status_code=502, detail=f"رفض WhatsApp إرسال الرسالة: {str(exc)[:300]}") from exc
+
+        now = utcnow()
+        message = Message(
+            organization_id=ctx.organization.id, conversation_id=conversation.id,
+            direction="outbound", body=body,
+            provider_message_id=delivery["message_id"], delivery_status="sent", created_at=now,
+        )
+        conversation.last_message_at = now
+        if conversation.status == "closed":
+            conversation.status = "open"
+        db.add(message)
+        db.flush()
+        audit(db, ctx, "whatsapp.message_sent", "message", message.id, {
+            "conversation_id": conversation.id, "account_id": account.id,
+            "provider_message_id": delivery["message_id"],
+        })
+        db.commit()
+        db.refresh(message)
+        return message
+
+    # Non-WhatsApp channels remain local-only until their inbound/outbound adapters are implemented.
     now = utcnow()
-    message = Message(organization_id=ctx.organization.id, conversation_id=conversation.id, direction=data.direction, body=data.body.strip(), delivery_status="local_only", created_at=now)
+    message = Message(
+        organization_id=ctx.organization.id, conversation_id=conversation.id,
+        direction=data.direction, body=body, delivery_status="local_only", created_at=now,
+    )
     conversation.last_message_at = now
     if conversation.status == "closed":
         conversation.status = "open"
     db.add(message)
     db.flush()
-    audit(db, ctx, "created", "message", message.id, {"conversation_id": conversation.id, "delivery_status": "local_only"})
+    audit(db, ctx, "created", "message", message.id, {
+        "conversation_id": conversation.id, "delivery_status": "local_only",
+    })
     db.commit()
     db.refresh(message)
     return message
