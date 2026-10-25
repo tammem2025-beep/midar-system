@@ -1446,7 +1446,7 @@ def test_meta_account_token_selection_and_reels_normalization():
     ) == "page-token"
     assert access_token_for_account(
         "Instagram", user_access_token="user-token", page_access_token="page-token",
-    ) == "user-token"
+    ) == "page-token"
 
     auth_url = make_meta_authorization_url({
         "app_id": "test-app",
