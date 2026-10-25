@@ -27,7 +27,9 @@ def configure_local_environment() -> tuple[Path, Path, Path]:
         install_dir = Path(__file__).resolve().parent
 
     local_app_data = Path(os.environ.get("LOCALAPPDATA") or (Path.home() / "AppData" / "Local"))
-    support_dir = local_app_data / "M"
+    portable_marker = install_dir / "portable-mode.flag"
+    portable_mode = bool(getattr(sys, "frozen", False) and portable_marker.is_file())
+    support_dir = (install_dir / "M-Portable-Data") if portable_mode else (local_app_data / "M")
     data_dir = support_dir / "data"
     media_dir = data_dir / "media"
     log_dir = support_dir / "logs"
@@ -91,7 +93,7 @@ def configure_local_environment() -> tuple[Path, Path, Path]:
     try:
         Fernet(provider_key.encode("ascii"))
     except (ValueError, UnicodeEncodeError):
-        raise RuntimeError("The provider token encryption key in %LOCALAPPDATA%\\M\\.env is invalid. It was not replaced; restore the original key or set a valid Fernet key.")
+        raise RuntimeError("The provider token encryption key in the active M support folder is invalid. It was not replaced; restore the original key or set a valid Fernet key.")
 
     secret = os.environ.get("SECRET_KEY", "").strip()
     if len(secret) < 32 or secret == "dev-only-change-this-secret-before-any-real-use":
