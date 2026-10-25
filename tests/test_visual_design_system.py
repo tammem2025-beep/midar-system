@@ -79,7 +79,7 @@ def test_runtime_assets_use_a_single_release_version():
     app = (ROOT / "frontend" / "app.js").read_text(encoding="utf-8")
     api = (ROOT / "backend" / "app" / "main.py").read_text(encoding="utf-8")
     assert f"midar-ui.css?v={version}" in page
-    assert "m-shell-v0230" in sw
+    assert "m-shell-v0240-facebook" in sw
     assert f"sw.js?v={version}" in app
     assert f'version="{version}"' in api
 
