@@ -1,4 +1,4 @@
-# ابدأ من هنا — M 0.21.0
+# ابدأ من هنا — M 0.21.1
 
 الاسم الظاهر للمنتج هو **M**، والعبارة المعتمدة تحته هي **Manage. Connect. Grow.**. هذا الإصدار يحسّن عرض العلامة وتجربة تسجيل الدخول ويحدّث مراجع cache؛ ولا يغيّر عن قصد مخطط قاعدة البيانات أو مفاتيح الجلسات الداخلية أو صلاحيات API.
 
@@ -17,8 +17,8 @@
 - `frontend/styles-src/14-m-brand-identity.css`: طبقة الهوية النهائية.
 - `frontend/midar-ui.css`: CSS مجمّع، يُعاد بناؤه من المصدر.
 - `frontend/manifest.webmanifest`: هوية تطبيق الويب القابل للتثبيت.
-- `CHANGELOG-0.21.0.md`: سجل التغييرات.
-- `docs/BRAND-IDENTITY-M-0.21.0-AR.md`: مواصفة الهوية.
+- `CHANGELOG-0.21.1.md`: سجل التغييرات.
+- `docs/BRAND-IDENTITY-M-0.21.1-AR.md`: مواصفة الهوية.
 - `docs/INTEGRATION-SECURITY-AUDIT-AR.md`: حالة التكاملات والأمن.
 - `docs/PRODUCTION-CHECKLIST.md`: قائمة الاستعداد للنشر.
 

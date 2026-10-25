@@ -1,4 +1,4 @@
-/* M 0.21.0 — brand identity and final UI refinement layer.
+/* M 0.21.1 — single-letter brand lockup refinement.
    Keep this module last: brand tokens, compact shell, shared components, and theme bridge. */
 :root {
   --m-brand-navy: #0B1020;
@@ -153,7 +153,7 @@ body { font-family: Inter, "IBM Plex Sans Arabic", "Segoe UI Variable", "Segoe U
 }
 .brand .logo::before, .brand .logo::after, .auth-brand .logo::before, .auth-brand .logo::after { content: none !important; display: none !important; }
 .brand-mark-image { display: block; width: 100%; height: 100%; object-fit: contain; filter: drop-shadow(0 5px 10px color-mix(in srgb, var(--md-accent) 18%, transparent)); }
-.brand { gap: 11px; padding-block: 0 12px; }
+.brand { flex-direction: column; align-items: center; gap: 6px; padding-block: 0 12px; }
 .brand b { font-size: 20px; font-weight: 800; line-height: 1.08; letter-spacing: .015em; color: #F4F7FF; }
 .brand small { margin-top: 4px; color: #9EADC6; font-size: 9px; line-height: 1.35; letter-spacing: .015em; }
 .auth-brand { align-items: center; gap: 13px; margin-bottom: 24px; }
@@ -556,7 +556,7 @@ textarea:focus-visible {
 :root[data-theme="light"] .auth-card h2 { color: var(--md-text); }
 
 
-/* M 0.21.0 — refined brand presentation, form hierarchy, and keyboard accessibility. */
+/* M 0.21.1 — refined brand presentation, form hierarchy, and keyboard accessibility. */
 .auth-page {
   min-height: 100vh;
   min-height: 100svh;
@@ -593,7 +593,8 @@ textarea:focus-visible {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 16px;
+  flex-direction: column;
+  gap: 10px;
   border-bottom: 1px solid var(--md-border);
 }
 .auth-brand .logo {
@@ -607,7 +608,8 @@ textarea:focus-visible {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: center;
+  text-align: center;
 }
 .auth-brand-copy h1 {
   margin: 0;
@@ -635,7 +637,8 @@ textarea:focus-visible {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: center;
+  text-align: center;
 }
 .brand small.brand-tagline {
   display: block;

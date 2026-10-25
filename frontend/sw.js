@@ -1,11 +1,11 @@
-/* M — Digital Business Management PWA shell cache — 0.21.0 */
-const CACHE='m-shell-v0210';
+/* M — Digital Business Management PWA shell cache — 0.21.1 */
+const CACHE='m-shell-v0211';
 const SHELL_ASSETS=[
   '/',
-  '/midar-ui.css?v=0.21.0',
-  '/settings-enhanced.js?v=0.21.0',
-  '/app.js?v=0.21.0',
-  '/command-center.js?v=0.21.0',
+  '/midar-ui.css?v=0.21.1',
+  '/settings-enhanced.js?v=0.21.1',
+  '/app.js?v=0.21.1',
+  '/command-center.js?v=0.21.1',
   '/brand-mark.svg',
   '/brand-m-mark.svg',
   '/brand-lockup.svg',
