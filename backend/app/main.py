@@ -26,7 +26,7 @@ from sqlalchemy.orm import Session
 from PIL import Image, UnidentifiedImageError
 
 from .db import Base, engine, get_db
-from .models import (AuthFailure, AuditLog, Campaign, Contact, Conversation, ExternalIdentity, OAuthLoginGrant as GoogleLoginGrant, InstallationState, Membership, MediaAsset, Message, OAuthTransaction, Organization, Post, ShortVideoDraft, SocialAccount, Task, User, UserPreference)
+from .models import (AuthFailure, AuditLog, Campaign, Contact, Conversation, ExternalIdentity, IntegrationCredential, OAuthLoginGrant as GoogleLoginGrant, InstallationState, Membership, MediaAsset, Message, OAuthTransaction, Organization, Post, ShortVideoDraft, SocialAccount, Task, User, UserPreference)
 from .schemas import (
     CampaignCreate, CampaignOut, CampaignUpdate, ChangePasswordIn, ContactCreate, ContactOut, ContactUpdate,
     ConversationCreate, ConversationOut, ConversationUpdate, LoginIn, MemberCreate, MemberOut, MemberUpdate,
@@ -41,7 +41,7 @@ from .integrations.google_oidc import GoogleOIDCError, get_google_config, make_a
 from .integrations.authorization import (AuthorizationTransactionError, cleanup_expired_authorization_transactions, create_authorization_transaction, consume_authorization_transaction)
 from .integrations.catalog import PROVIDER_REGISTRY, public_provider_catalog
 from .integrations.registry import get_connector
-from .integrations.meta_graph import (META_SCOPES, MetaGraphError, access_token_for_account, exchange_meta_code, exchange_for_long_lived_token, fetch_account_media, get_meta_config, list_managed_pages, make_meta_authorization_url)
+from .integrations.meta_graph import (META_SCOPES, MetaDeliveryUnknown, MetaGraphError, access_token_for_account, exchange_meta_code, exchange_for_long_lived_token, fetch_account_media, get_meta_config, list_granted_permissions, list_managed_pages, make_meta_authorization_url, publish_page_text as meta_publish_page_text)
 from .integrations.credential_store import CredentialScopeError, CredentialStoreError, load_provider_credential, store_provider_credential
 from .security_tokens import TokenVaultError
 
@@ -122,7 +122,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="M API",
     description="M API — Manage. Connect. Grow. يتضمن تسجيل Google الاختياري وقراءة محتوى Facebook Pages وحسابات Instagram الاحترافية بعد إعداد OAuth.",
-    version="0.23.1",
+    version="0.24.0",
     lifespan=lifespan,
 )
 
@@ -920,6 +920,7 @@ def integration_status(ctx: AuthContext = Depends(get_context), db: Session = De
         meta_provider = provider in {"Facebook", "Instagram"}
         implemented = (provider == "Telegram" and definition["implementation_status"] in {"partial", "implemented"}) or meta_provider
         connected_accounts = 0
+        publish_ready_accounts = 0
         if meta_provider:
             connected_accounts = int(db.scalar(select(func.count(SocialAccount.id)).where(
                 SocialAccount.organization_id == ctx.organization.id,
@@ -927,8 +928,32 @@ def integration_status(ctx: AuthContext = Depends(get_context), db: Session = De
                 SocialAccount.connection_status == "connected",
                 SocialAccount.provider_account_id.is_not(None),
             )) or 0)
+            if provider == "Facebook" and connected_accounts:
+                scope_rows = db.scalars(
+                    select(IntegrationCredential.scopes_json)
+                    .join(SocialAccount, SocialAccount.id == IntegrationCredential.social_account_id)
+                    .where(
+                        IntegrationCredential.organization_id == ctx.organization.id,
+                        IntegrationCredential.provider == "Facebook",
+                        IntegrationCredential.status == "active",
+                        SocialAccount.platform == "Facebook",
+                        SocialAccount.connection_status == "connected",
+                        SocialAccount.provider_account_id.is_not(None),
+                    )
+                ).all()
+                for scopes_json in scope_rows:
+                    try:
+                        scopes = json.loads(scopes_json)
+                    except (TypeError, ValueError, json.JSONDecodeError):
+                        scopes = []
+                    if isinstance(scopes, list) and "pages_manage_posts" in scopes:
+                        publish_ready_accounts += 1
             config_ready = bool(get_meta_config())
-            state = "connected_read_only" if connected_accounts else ("authorization_required" if config_ready else "not_configured")
+            state = (
+                "connected_read_write" if provider == "Facebook" and publish_ready_accounts else
+                "connected_read_only" if connected_accounts else
+                ("authorization_required" if config_ready else "not_configured")
+            )
         elif implemented:
             state = "configured_channel_verification_required" if present else "not_configured"
         else:
@@ -947,7 +972,12 @@ def integration_status(ctx: AuthContext = Depends(get_context), db: Session = De
             "implemented_capabilities": list(definition["implemented_capabilities"]),
             "planned_capabilities": list(definition["planned_capabilities"]),
             "connected_accounts": connected_accounts if meta_provider else 0,
-            "supported_actions": (["verify_channel", "publish_text"] if provider == "Telegram" else list(definition["implemented_capabilities"])) if implemented else [],
+            "publish_ready_accounts": publish_ready_accounts if provider == "Facebook" else 0,
+            "supported_actions": (
+                ["verify_channel", "publish_text"] if provider == "Telegram" else
+                (["account_authorization", "read_page_posts", "read_page_videos"] + (["publish_page_text"] if publish_ready_accounts else [])) if provider == "Facebook" else
+                list(definition["implemented_capabilities"])
+            ) if implemented else [],
         })
 
     telegram_token_present = bool(os.getenv("TELEGRAM_BOT_TOKEN", "").strip())
@@ -967,7 +997,11 @@ def integration_status(ctx: AuthContext = Depends(get_context), db: Session = De
                 "publishing_disabled" if telegram_destination_ready and not external_publishing_enabled else
                 "configured_channel_verification_required" if telegram_token_present else "not_configured"
             )
-    ready = bool(telegram_destination_ready and external_publishing_enabled)
+    facebook_destination_ready = any(
+        item["platform"] == "Facebook" and int(item.get("publish_ready_accounts", 0)) > 0
+        for item in providers
+    )
+    ready = bool(external_publishing_enabled and (telegram_destination_ready or facebook_destination_ready))
     return {
         "providers": providers,
         "external_actions_enabled": ready,
@@ -976,7 +1010,7 @@ def integration_status(ctx: AuthContext = Depends(get_context), db: Session = De
         "note": (
             "النشر الخارجي متوقف افتراضيًا كإجراء أمان. وظائف إنشاء المحتوى وإدارته محليًا متاحة، ولن يتم إرسال أي منشور إلى منصة خارجية حتى تفعيل ENABLE_EXTERNAL_PUBLISHING صراحةً بعد مراجعة الجاهزية."
             if not external_publishing_enabled else
-            "النشر الخارجي مفعّل في إعدادات الخادم؛ لا يصبح Telegram جاهزًا إلا بوجود رمز البوت ووجهة متحقق منها. بقية المنصات تحتاج موصلات منفذة وموافقات مستقلة."
+            "النشر الخارجي مفعّل في إعدادات الخادم؛ يمكن نشر نص إلى صفحات Facebook التي منحت pages_manage_posts فعليًا، أو إلى وجهات Telegram المتحقق منها. بقية وظائف المنصات تحتاج موصلات وموافقات مستقلة."
         ),
     }
 
@@ -1341,74 +1375,109 @@ async def publish_post(post_id: str, ctx: AuthContext = Depends(get_context), db
             detail="النشر الخارجي متوقف افتراضيًا في هذه المرحلة. لم يتم إرسال أي محتوى. لا تفعّل ENABLE_EXTERNAL_PUBLISHING=true إلا بعد مراجعة الإعدادات وإقرار بدء الاختبار الخارجي.",
         )
     post = db.scalar(select(Post).where(Post.id == post_id, Post.organization_id == ctx.organization.id))
-    if not post: not_found("المنشور")
-    if post.platform != "Telegram":
-        raise HTTPException(status_code=501, detail="النشر الخارجي متاح حاليًا لقنوات Telegram النصية فقط")
-    token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
-    if not token:
-        raise HTTPException(status_code=503, detail="موصل Telegram غير مهيأ على الخادم")
+    if not post:
+        not_found("المنشور")
+    if post.platform not in {"Telegram", "Facebook"}:
+        raise HTTPException(status_code=501, detail="النشر الخارجي متاح حاليًا للنصوص على Telegram وصفحات Facebook فقط")
     if post.status in {"published", "publishing", "delivery_unknown"}:
         raise HTTPException(status_code=409, detail="حالة المنشور لا تسمح بإعادة الإرسال؛ تحقق من القناة قبل أي محاولة جديدة")
     if post.status not in {"draft", "scheduled", "approved", "failed"}:
         raise HTTPException(status_code=409, detail="لا يمكن نشر هذا المنشور من حالته الحالية")
     if not post.social_account_id:
-        raise HTTPException(status_code=422, detail="اختر قناة Telegram للمنشور أولًا")
-    account = db.scalar(select(SocialAccount).where(SocialAccount.id == post.social_account_id,
-            SocialAccount.organization_id == ctx.organization.id, SocialAccount.platform == "Telegram"))
+        raise HTTPException(status_code=422, detail="اختر حسابًا اجتماعيًا للمنشور أولًا")
+    account = db.scalar(select(SocialAccount).where(
+        SocialAccount.id == post.social_account_id,
+        SocialAccount.organization_id == ctx.organization.id,
+        SocialAccount.platform == post.platform,
+    ))
     if not account or account.connection_status != "connected" or not account.provider_account_id:
-        raise HTTPException(status_code=409, detail="تحقق من قناة Telegram أولًا من شاشة الحسابات الاجتماعية")
+        raise HTTPException(status_code=409, detail="تحقق من الوجهة الاجتماعية أولًا من شاشة الحسابات الاجتماعية")
+
+    telegram_token = ""
+    meta_config = None
+    facebook_credential = None
+    if post.platform == "Telegram":
+        telegram_token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+        if not telegram_token:
+            raise HTTPException(status_code=503, detail="موصل Telegram غير مهيأ على الخادم")
+    else:
+        meta_config = get_meta_config()
+        if not meta_config:
+            raise HTTPException(status_code=503, detail="إعداد Meta غير مكتمل على الخادم")
+        try:
+            facebook_credential = load_provider_credential(
+                db, organization_id=ctx.organization.id, social_account_id=account.id,
+            )
+        except (CredentialStoreError, CredentialScopeError, TokenVaultError) as exc:
+            raise HTTPException(status_code=409, detail="تعذر فتح بيانات اعتماد صفحة Facebook بأمان؛ أعد ربط Meta.") from exc
+        if facebook_credential is None:
+            raise HTTPException(status_code=409, detail="لا توجد بيانات اعتماد Meta لهذه الصفحة؛ أعد ربط Facebook.")
+        if "pages_manage_posts" not in facebook_credential.scopes:
+            raise HTTPException(
+                status_code=409,
+                detail="هذه الصفحة متصلة للقراءة فقط. أعد ربط Meta ووافق على صلاحية pages_manage_posts قبل النشر.",
+            )
+
     text_body = (post.content or "").strip() or post.title.strip()
     if not text_body:
         raise HTTPException(status_code=422, detail="أضف نصًا للمنشور قبل النشر")
-    if len(text_body) > 4096:
-        raise HTTPException(status_code=422, detail="حد نص منشور Telegram هو 4096 حرفًا؛ اختصر المحتوى قبل النشر")
+    max_chars = 4096 if post.platform == "Telegram" else 60000
+    if len(text_body) > max_chars:
+        raise HTTPException(status_code=422, detail=f"يتجاوز النص الحد المسموح لهذه المنصة وهو {max_chars} حرفًا")
 
-    # Atomically reserve the delivery attempt. A concurrent request cannot submit
-    # the same post twice; ambiguous network outcomes are never auto-retried.
-    result = db.execute(update(Post).where(Post.id == post.id, Post.organization_id == ctx.organization.id,
-            Post.status.in_(["draft", "scheduled", "approved", "failed"]))
-            .values(status="publishing", publish_error=None, updated_at=utcnow()))
+    # Reserve atomically. Timeouts are ambiguous; an ambiguous send is never auto-retried.
+    result = db.execute(update(Post).where(
+        Post.id == post.id,
+        Post.organization_id == ctx.organization.id,
+        Post.status.in_(["draft", "scheduled", "approved", "failed"]),
+    ).values(status="publishing", publish_error=None, updated_at=utcnow()))
     if result.rowcount != 1:
         db.rollback()
         raise HTTPException(status_code=409, detail="بدأت محاولة نشر أخرى لهذا المنشور؛ حدّث الصفحة وتحقق من حالته")
     db.commit()
     post = db.scalar(select(Post).where(Post.id == post_id, Post.organization_id == ctx.organization.id))
-    connector = get_connector(
-        account.platform,
-        telegram_verify_fn=telegram_verify_channel,
-        telegram_publish_fn=telegram_send_text,
-    )
-    if connector is None or not connector.capabilities.publish_text:
-        post.status = "failed"
-        post.publish_error = "لا يوجد موصل نشر نصي فعّال لهذه المنصة."
-        post.updated_at = utcnow()
-        db.commit()
-        raise HTTPException(status_code=501, detail=post.publish_error)
+
     try:
-        delivery = await connector.publish_text(token, account.provider_account_id, text_body)
-    except TelegramDeliveryUnknown as exc:
+        if post.platform == "Telegram":
+            connector = get_connector(
+                account.platform,
+                telegram_verify_fn=telegram_verify_channel,
+                telegram_publish_fn=telegram_send_text,
+            )
+            if connector is None or not connector.capabilities.publish_text:
+                raise TelegramAPIError("لا يوجد موصل نشر نصي فعّال لقناة Telegram.")
+            delivery = await connector.publish_text(telegram_token, account.provider_account_id, text_body)
+        else:
+            delivery = await meta_publish_page_text(
+                meta_config, account.provider_account_id, facebook_credential.access_token, text_body,
+            )
+    except (TelegramDeliveryUnknown, MetaDeliveryUnknown) as exc:
         post.status = "delivery_unknown"
-        post.publish_error = "تعذر تأكيد نتيجة الطلب. افحص القناة في Telegram قبل أي إعادة محاولة."
+        post.publish_error = "تعذر تأكيد نتيجة الطلب. افحص الصفحة أو القناة الخارجية قبل أي إعادة محاولة."
         post.updated_at = utcnow()
-        audit(db, ctx, "telegram.publish_outcome_unknown", "post", post.id, {"account_id": account.id})
+        audit(db, ctx, f"{post.platform.lower()}.publish_outcome_unknown", "post", post.id, {"account_id": account.id})
         db.commit()
         raise HTTPException(status_code=502, detail=post.publish_error) from exc
-    except TelegramAPIError as exc:
+    except (TelegramAPIError, MetaGraphError) as exc:
         post.status = "failed"
         post.publish_error = str(exc)[:1000]
         post.updated_at = utcnow()
-        audit(db, ctx, "telegram.publish_failed", "post", post.id, {"account_id": account.id, "error_code": exc.error_code})
+        audit(db, ctx, f"{post.platform.lower()}.publish_failed", "post", post.id, {"account_id": account.id})
         db.commit()
-        raise HTTPException(status_code=502, detail=f"رفض Telegram نشر الرسالة: {str(exc)[:300]}") from exc
+        raise HTTPException(status_code=502, detail=f"رفضت المنصة نشر الرسالة: {str(exc)[:300]}") from exc
 
     post.status = "published"
     post.published_at = utcnow()
-    post.provider_post_id = str(delivery.get("message_id")) if delivery.get("message_id") is not None else None
+    provider_post_id = delivery.get("message_id") or delivery.get("id") or delivery.get("post_id")
+    post.provider_post_id = str(provider_post_id) if provider_post_id is not None else None
     post.publish_error = None
     post.updated_at = utcnow()
     account.last_synced_at = utcnow()
-    audit(db, ctx, "telegram.published", "post", post.id, {"account_id": account.id, "provider_post_id": post.provider_post_id})
-    db.commit(); db.refresh(post)
+    audit(db, ctx, f"{post.platform.lower()}.published", "post", post.id, {
+        "account_id": account.id, "provider_post_id": post.provider_post_id,
+    })
+    db.commit()
+    db.refresh(post)
     return post
 
 
@@ -1657,10 +1726,11 @@ async def meta_connect_callback(
     try:
         token_payload = await exchange_meta_code(config, code)
         long_payload = await exchange_for_long_lived_token(config, token_payload["access_token"])
+        granted_scopes = await list_granted_permissions(config, long_payload["access_token"])
         pages = await list_managed_pages(config, long_payload["access_token"])
         if not pages:
             return finish("no_pages")
-        scopes = tuple(META_SCOPES)
+        scopes = tuple(granted_scopes)
         saved = 0
         for page in pages:
             page_id = str(page.get("id") or "").strip()
