@@ -123,7 +123,7 @@ def make_social_authorization_url(config: SocialOAuthConfig, state: str, code_ch
         "response_type": "code",
         "redirect_uri": config.redirect_uri,
         "state": state,
-        "scope": " ".join(config.scopes),
+        "scope": ",".join(config.scopes) if config.provider == "tiktok" else " ".join(config.scopes),
     }
     if config.provider == "tiktok":
         params["client_key"] = config.client_id
