@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 from ..models import AuditLog, Membership, OAuthTransaction, Organization, ProviderOAuthBinding, User, utcnow
 
 _PROVIDER_KEY = re.compile(r"^[a-z][a-z0-9_-]{1,31}$")
-_ALLOWED_PURPOSES = {"login", "link", "identity_link"}
+_ALLOWED_PURPOSES = {"login", "setup", "link", "identity_link", "connect"}
 
 
 class AuthorizationTransactionError(RuntimeError):
@@ -90,7 +90,7 @@ def create_authorization_transaction(
         raise AuthorizationTransactionError("Authorization purpose is invalid.", reason="invalid_purpose")
     ttl = max(60, min(int(ttl_seconds), 900))
 
-    if purpose in {"link", "identity_link"}:
+    if purpose in {"link", "identity_link", "connect"}:
         if not user_id or not organization_id:
             raise AuthorizationTransactionError("Account linking requires an authenticated user and workspace.", reason="invalid_context")
         user = db.get(User, user_id)
@@ -101,7 +101,7 @@ def create_authorization_transaction(
         ))
         if not user or not user.is_active or not organization or membership is None:
             raise AuthorizationTransactionError("Account linking context is not valid.", reason="invalid_context")
-        if purpose == "link" and membership.role not in {"owner", "admin"}:
+        if purpose in {"link", "connect"} and membership.role not in {"owner", "admin"}:
             raise AuthorizationTransactionError("Only a workspace owner or administrator may link a social account.", reason="insufficient_role")
         if auth_version is not None and int(auth_version) != int(user.auth_version or 0):
             raise AuthorizationTransactionError("User authentication state changed; start authorization again.", reason="auth_changed")
@@ -125,7 +125,7 @@ def create_authorization_transaction(
         browser_binding_hash=_hash_browser_binding(browser_binding),
         created_at=utcnow(),
     ))
-    if purpose in {"link", "identity_link"} and user_id and organization_id:
+    if purpose in {"link", "identity_link", "connect"} and user_id and organization_id:
         db.add(AuditLog(
             organization_id=organization_id, user_id=user_id,
             action="integration.authorization_started", entity_type="provider",
@@ -203,7 +203,7 @@ def consume_authorization_transaction(
         )) if row.user_id and row.organization_id else None
         if (
             not user or not user.is_active or not organization or membership is None
-            or (row.purpose == "link" and membership.role not in {"owner", "admin"})
+            or (row.purpose in {"link", "connect"} and membership.role not in {"owner", "admin"})
             or int(user.auth_version or 0) != int(row.auth_version or 0)
         ):
             db.execute(delete(ProviderOAuthBinding).where(ProviderOAuthBinding.state_hash == row.state_hash))

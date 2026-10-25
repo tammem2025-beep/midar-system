@@ -41,6 +41,9 @@ from .integrations.google_oidc import GoogleOIDCError, get_google_config, make_a
 from .integrations.authorization import (AuthorizationTransactionError, cleanup_expired_authorization_transactions, create_authorization_transaction, consume_authorization_transaction)
 from .integrations.catalog import PROVIDER_REGISTRY, public_provider_catalog
 from .integrations.registry import get_connector
+from .integrations.meta_graph import (META_SCOPES, MetaGraphError, exchange_meta_code, exchange_for_long_lived_token, fetch_account_media, get_meta_config, list_managed_pages, make_meta_authorization_url)
+from .integrations.credential_store import CredentialScopeError, CredentialStoreError, load_provider_credential, store_provider_credential
+from .security_tokens import TokenVaultError
 
 API_PREFIX = "/api/v1"
 security_logger = logging.getLogger("midar.security")
@@ -118,8 +121,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="M API",
-    description="M API — Manage. Connect. Grow. يتوفر حاليًا تكامل Telegram محدود للنشر النصي بعد التحقق من القناة.",
-    version="0.22.0",
+    description="M API — Manage. Connect. Grow. يتضمن تسجيل Google الاختياري وقراءة محتوى Facebook Pages وحسابات Instagram الاحترافية بعد إعداد OAuth.",
+    version="0.23.0",
     lifespan=lifespan,
 )
 
@@ -504,7 +507,7 @@ def _safe_google_redirect(
     result: str, *, cookie_name: str | None = None, secure_cookie: bool = False,
 ) -> RedirectResponse:
     # Only fixed result codes are accepted here; no arbitrary destination can be supplied.
-    allowed = {"not_configured", "access_denied", "invalid_state", "exchange_failed", "identity_unlinked", "account_inactive", "link_conflict", "link_stale", "link_success", "not_linked", "login_success", "invalid_profile"}
+    allowed = {"not_configured", "access_denied", "invalid_state", "exchange_failed", "identity_unlinked", "account_inactive", "link_conflict", "link_stale", "link_success", "not_linked", "login_success", "invalid_profile", "setup_complete"}
     safe_result = result if result in allowed else "invalid_state"
     target = f"/#google_result={safe_result}"
     response = RedirectResponse(url=target, status_code=303)
@@ -570,6 +573,14 @@ def _google_authorization_start_response(
 @app.post(f"{API_PREFIX}/auth/google/login-url")
 def google_login_url(request: Request, db: Session = Depends(get_db)):
     return _google_authorization_start_response(request, "login", None, db)
+
+
+@app.post(f"{API_PREFIX}/auth/google/setup-url")
+def google_setup_url(request: Request, db: Session = Depends(get_db)):
+    """Allow Google to create the first owner workspace once only."""
+    if (db.scalar(select(func.count(Organization.id))) or 0) > 0 or db.get(InstallationState, "primary"):
+        raise HTTPException(status_code=409, detail="تم إعداد مساحة العمل بالفعل. سجّل الدخول بالطريقة المرتبطة بحسابك.")
+    return _google_authorization_start_response(request, "setup", None, db)
 
 
 @app.post(f"{API_PREFIX}/auth/google/link-url")
@@ -645,6 +656,59 @@ def google_callback(
 
     provider_subject = claims["sub"]
     email = str(claims["email"]).strip().lower()
+    if tx["purpose"] == "setup":
+        # Only an empty installation can be initialized using a Google-verified identity.
+        if (db.scalar(select(func.count(Organization.id))) or 0) > 0 or db.get(InstallationState, "primary"):
+            return _safe_google_redirect("setup_complete", cookie_name=cookie_name, secure_cookie=secure_cookie)
+        if db.scalar(select(User).where(User.email == email)) or db.scalar(select(ExternalIdentity).where(
+            ExternalIdentity.provider == "google", ExternalIdentity.subject == provider_subject,
+        )):
+            return _safe_google_redirect("account_inactive", cookie_name=cookie_name, secure_cookie=secure_cookie)
+        lock = InstallationState(id="primary")
+        db.add(lock)
+        try:
+            db.flush()
+        except IntegrityError:
+            db.rollback()
+            return _safe_google_redirect("setup_complete", cookie_name=cookie_name, secure_cookie=secure_cookie)
+        full_name = str(claims.get("name") or email.split("@", 1)[0]).strip()[:160]
+        if len(full_name) < 2:
+            full_name = "M Owner"
+        organization = Organization(name=f"مساحة عمل {full_name}"[:160], timezone="Asia/Hebron")
+        db.add(organization)
+        db.flush()
+        user = User(email=email, full_name=full_name, password_hash=hash_password(secrets.token_urlsafe(48)))
+        db.add(user)
+        db.flush()
+        membership = Membership(organization_id=organization.id, user_id=user.id, role="owner")
+        db.add(membership)
+        identity = ExternalIdentity(
+            user_id=user.id, provider="google", subject=provider_subject, email=email,
+            email_verified=True, created_at=utcnow(), last_login_at=utcnow(),
+        )
+        db.add(identity)
+        lock.organization_id = organization.id
+        db.add(AuditLog(
+            organization_id=organization.id, user_id=user.id, action="setup.google_created",
+            entity_type="organization", entity_id=organization.id, details='{"provider":"google"}',
+        ))
+        one_time_code = secrets.token_urlsafe(48)
+        db.add(GoogleLoginGrant(
+            code_hash=hashlib.sha256(one_time_code.encode("utf-8")).hexdigest(),
+            user_id=user.id, organization_id=organization.id, auth_version=int(user.auth_version or 0),
+            created_at=utcnow(), expires_at=utcnow() + timedelta(minutes=2), used_at=None,
+        ))
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            return _safe_google_redirect("setup_complete", cookie_name=cookie_name, secure_cookie=secure_cookie)
+        response = RedirectResponse(url=f"/#google_code={one_time_code}", status_code=303)
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["Referrer-Policy"] = "no-referrer"
+        _clear_google_binding_cookie(response, cookie_name, secure_cookie)
+        return response
+
     if tx["purpose"] in {"link", "identity_link"}:
         user = db.get(User, tx["user_id"]) if tx["user_id"] else None
         organization = db.get(Organization, tx["organization_id"]) if tx["organization_id"] else None
@@ -1424,6 +1488,239 @@ def delete_task(task_id: str, ctx: AuthContext = Depends(get_context), db: Sessi
     obj = db.scalar(select(Task).where(Task.id == task_id, Task.organization_id == ctx.organization.id))
     if not obj: not_found("المهمة")
     audit(db, ctx, "deleted", "task", obj.id); db.delete(obj); db.commit(); return Response(status_code=204)
+
+
+
+def _meta_binding_cookie_name(state: str) -> str:
+    digest = hashlib.sha256(state.encode("utf-8")).hexdigest()[:24]
+    return f"m_oauth_meta_bind_{digest}"
+
+
+def _meta_result_redirect(result: str, connected_count: int | None = None) -> RedirectResponse:
+    allowed = {"connected", "access_denied", "invalid_state", "not_configured", "no_pages", "connection_failed", "setup_required"}
+    code = result if result in allowed else "connection_failed"
+    suffix = f"&count={int(connected_count)}" if connected_count is not None else ""
+    response = RedirectResponse(url=f"/?meta_result={code}{suffix}", status_code=303)
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return response
+
+
+def _upsert_meta_social_account(
+    db: Session, ctx: AuthContext, *, platform: str, external_id: str, account_name: str,
+    handle: str, access_token: str, scopes: tuple[str, ...],
+) -> SocialAccount:
+    """Store verified provider identities separately from encrypted token material."""
+    account = db.scalar(select(SocialAccount).where(
+        SocialAccount.organization_id == ctx.organization.id,
+        SocialAccount.platform == platform,
+        SocialAccount.provider_account_id == external_id,
+    ))
+    clean_handle = (handle or f"meta:{external_id}")[:180]
+    collision = db.scalar(select(SocialAccount).where(
+        SocialAccount.organization_id == ctx.organization.id,
+        SocialAccount.platform == platform, SocialAccount.handle == clean_handle,
+    ))
+    if collision is not None and (account is None or collision.id != account.id):
+        clean_handle = f"meta:{external_id}"[:180]
+        collision = db.scalar(select(SocialAccount).where(
+            SocialAccount.organization_id == ctx.organization.id,
+            SocialAccount.platform == platform, SocialAccount.handle == clean_handle,
+        ))
+        if collision is not None and (account is None or collision.id != account.id):
+            clean_handle = None
+    if account is None:
+        account = SocialAccount(
+            organization_id=ctx.organization.id, platform=platform, account_name=account_name[:160],
+            handle=clean_handle, connection_status="connected", provider_account_id=external_id,
+            last_synced_at=utcnow(),
+        )
+        db.add(account)
+    else:
+        account.account_name = account_name[:160]
+        account.handle = clean_handle
+        account.connection_status = "connected"
+        account.provider_account_id = external_id
+        account.last_synced_at = utcnow()
+    db.flush()
+    store_provider_credential(
+        db, organization_id=ctx.organization.id, social_account_id=account.id,
+        actor_user_id=ctx.user.id, provider=platform, access_token=access_token,
+        scopes=scopes, expires_at=None,
+    )
+    return account
+
+
+@app.get(f"{API_PREFIX}/integrations/meta/config")
+def meta_integration_config():
+    config = get_meta_config()
+    return {
+        "enabled": bool(config), "provider": "Meta",
+        "api_version": config["version"] if config else os.getenv("META_GRAPH_API_VERSION", "v26.0"),
+        "token_vault_ready": bool(os.getenv("PROVIDER_TOKEN_ENCRYPTION_KEY", "").strip()),
+        "supports": ["Facebook Pages", "Instagram Professional accounts linked to a Facebook Page"],
+        "note": "يتطلب تطبيق Meta وموافقة OAuth والصلاحيات المناسبة. لا يدعم حسابات Instagram الشخصية غير الاحترافية.",
+    }
+
+
+@app.post(f"{API_PREFIX}/integrations/meta/connect-url")
+def meta_connect_url(request: Request, ctx: AuthContext = Depends(get_context), db: Session = Depends(get_db)):
+    require_roles(ctx, {"owner", "admin"})
+    config = get_meta_config()
+    if not config:
+        raise HTTPException(status_code=503, detail="أكمل META_APP_ID وMETA_APP_SECRET وMETA_REDIRECT_URI في إعدادات M أولًا.")
+    if not os.getenv("PROVIDER_TOKEN_ENCRYPTION_KEY", "").strip():
+        raise HTTPException(status_code=503, detail="خزنة رموز المنصات غير مهيأة. أعد تشغيل M لتوليد مفتاحها المحلي أو اضبط PROVIDER_TOKEN_ENCRYPTION_KEY.")
+    cleanup_expired_authorization_transactions(db)
+    try:
+        challenge = create_authorization_transaction(
+            db, provider="meta", purpose="connect", user_id=ctx.user.id,
+            organization_id=ctx.organization.id, auth_version=int(ctx.user.auth_version or 0),
+            ttl_seconds=600,
+        )
+        db.commit()
+    except AuthorizationTransactionError as exc:
+        db.rollback()
+        raise HTTPException(status_code=403, detail="لا يمكن بدء ربط Meta لهذا المستخدم أو مساحة العمل.") from exc
+    response = JSONResponse({"authorization_url": make_meta_authorization_url(config, challenge.state)})
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.set_cookie(
+        key=_meta_binding_cookie_name(challenge.state), value=challenge.browser_binding, max_age=600,
+        path=f"{API_PREFIX}/integrations/meta/callback",
+        secure=_google_cookie_secure(request), httponly=True, samesite="lax",
+    )
+    return response
+
+
+@app.get(f"{API_PREFIX}/integrations/meta/callback")
+async def meta_connect_callback(
+    request: Request, code: str | None = None, state: str | None = None,
+    error: str | None = None, db: Session = Depends(get_db),
+):
+    if not state or len(state) > 256:
+        return _meta_result_redirect("invalid_state")
+    state_hash = hashlib.sha256(state.encode("utf-8")).hexdigest()
+    stored = db.get(OAuthTransaction, state_hash)
+    cookie_name = _meta_binding_cookie_name(state)
+    secure_cookie = _google_cookie_secure(request)
+    if not stored or stored.provider != "meta" or stored.purpose != "connect":
+        return _meta_result_redirect("invalid_state")
+    try:
+        consumed = consume_authorization_transaction(
+            db, provider="meta", purpose="connect", state=state,
+            browser_binding=request.cookies.get(cookie_name, ""),
+        )
+        db.commit()
+    except AuthorizationTransactionError as exc:
+        if exc.cleanup_performed:
+            db.commit()
+        else:
+            db.rollback()
+        return _meta_result_redirect("invalid_state")
+
+    def finish(result: str, count: int | None = None) -> RedirectResponse:
+        response = _meta_result_redirect(result, count)
+        response.delete_cookie(
+            key=cookie_name, path=f"{API_PREFIX}/integrations/meta/callback",
+            secure=secure_cookie, httponly=True, samesite="lax",
+        )
+        return response
+
+    if error:
+        return finish("access_denied")
+    if not code or len(code) > 4096:
+        return finish("invalid_state")
+    config = get_meta_config()
+    if not config or not os.getenv("PROVIDER_TOKEN_ENCRYPTION_KEY", "").strip():
+        return finish("not_configured")
+    actor = db.get(User, consumed.user_id) if consumed.user_id else None
+    organization = db.get(Organization, consumed.organization_id) if consumed.organization_id else None
+    membership = db.scalar(select(Membership).where(
+        Membership.user_id == consumed.user_id, Membership.organization_id == consumed.organization_id,
+    )) if consumed.user_id and consumed.organization_id else None
+    if not actor or not actor.is_active or not organization or membership is None or membership.role not in {"owner", "admin"}:
+        return finish("setup_required")
+    ctx = AuthContext(actor, membership, organization)
+    try:
+        token_payload = await exchange_meta_code(config, code)
+        long_payload = await exchange_for_long_lived_token(config, token_payload["access_token"])
+        pages = await list_managed_pages(config, long_payload["access_token"])
+        if not pages:
+            return finish("no_pages")
+        scopes = tuple(META_SCOPES)
+        saved = 0
+        for page in pages:
+            page_id = str(page.get("id") or "").strip()
+            page_token = page.get("access_token")
+            if not page_id or not isinstance(page_token, str) or not page_token:
+                continue
+            page_name = str(page.get("name") or "Facebook Page").strip()[:160]
+            _upsert_meta_social_account(
+                db, ctx, platform="Facebook", external_id=page_id, account_name=page_name,
+                handle=f"page:{page_id}", access_token=page_token, scopes=scopes,
+            )
+            saved += 1
+            instagram = page.get("instagram_business_account")
+            if isinstance(instagram, dict) and instagram.get("id"):
+                ig_id = str(instagram["id"]).strip()
+                username = str(instagram.get("username") or "").strip()
+                _upsert_meta_social_account(
+                    db, ctx, platform="Instagram", external_id=ig_id,
+                    account_name=username or f"Instagram {ig_id}",
+                    handle=f"@{username}" if username else f"ig:{ig_id}",
+                    access_token=page_token, scopes=scopes,
+                )
+                saved += 1
+        if not saved:
+            db.rollback()
+            return finish("no_pages")
+        audit(db, ctx, "integration.meta_connected", "provider", None, {"account_count": saved, "api_version": config["version"]})
+        db.commit()
+        return finish("connected", saved)
+    except (MetaGraphError, CredentialStoreError, CredentialScopeError, TokenVaultError, IntegrityError):
+        db.rollback()
+        security_logger.warning("meta_oauth_connection_failed organization_id=%s", organization.id)
+        return finish("connection_failed")
+    except Exception:
+        db.rollback()
+        security_logger.exception("meta_oauth_connection_unexpected_failure organization_id=%s", organization.id)
+        return finish("connection_failed")
+
+
+@app.get(f"{API_PREFIX}/integrations/meta/accounts/{account_id}/media")
+async def meta_account_media(
+    account_id: str, limit: int = Query(30, ge=1, le=50),
+    ctx: AuthContext = Depends(get_context), db: Session = Depends(get_db),
+):
+    require_read(ctx, "accounts")
+    account = db.scalar(select(SocialAccount).where(
+        SocialAccount.id == account_id, SocialAccount.organization_id == ctx.organization.id,
+        SocialAccount.platform.in_(("Facebook", "Instagram")),
+        SocialAccount.connection_status == "connected", SocialAccount.provider_account_id.is_not(None),
+    ))
+    if not account:
+        raise HTTPException(status_code=404, detail="الحساب غير متصل أو غير موجود في مساحة العمل الحالية.")
+    config = get_meta_config()
+    if not config:
+        raise HTTPException(status_code=503, detail="إعداد Meta غير متاح على هذا الخادم.")
+    try:
+        credential = load_provider_credential(db, organization_id=ctx.organization.id, social_account_id=account.id)
+        if credential is None:
+            raise HTTPException(status_code=409, detail="لا توجد بيانات اعتماد مشفرة لهذا الحساب؛ أعد ربط Meta.")
+        items = await fetch_account_media(config, account.platform, account.provider_account_id, credential.access_token, limit)
+    except HTTPException:
+        raise
+    except (MetaGraphError, CredentialStoreError, CredentialScopeError, TokenVaultError):
+        raise HTTPException(status_code=502, detail="تعذر قراءة المحتوى من Meta. تحقق من صلاحيات التطبيق وصلاحية الربط ثم أعد الاتصال.")
+    account.last_synced_at = utcnow()
+    audit(db, ctx, "integration.meta_media_read", "social_account", account.id, {"count": len(items)})
+    db.commit()
+    return {
+        "account": {"id": account.id, "platform": account.platform, "account_name": account.account_name, "handle": account.handle},
+        "source": "meta_graph_api", "items": items, "fetched_at": utcnow(),
+    }
+
 
 @app.get(f"{API_PREFIX}/social-accounts", response_model=list[SocialAccountOut])
 def list_social_accounts(ctx: AuthContext = Depends(get_context), db: Session = Depends(get_db)):
