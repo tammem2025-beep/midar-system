@@ -2,7 +2,7 @@
 
 This is an internal service, not a public HTTP endpoint. Call it only after a
 provider-specific OAuth callback has verified state/PKCE and validated the remote
-account identity. A provider OAuth flow is not yet implemented for Meta in this release.
+account identity. Meta OAuth is implemented in the API routes; successful linking still requires developer credentials and approved permissions.
 """
 from __future__ import annotations
 
