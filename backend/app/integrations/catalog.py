@@ -17,10 +17,10 @@ PROVIDER_REGISTRY: tuple[dict[str, Any], ...] = (
         "implementation_status": "partial",
         "status_label_ar": "ربط وقراءة المحتوى",
         "description_ar": "تكامل صفحات الأعمال باستخدام واجهات Meta الرسمية.",
-        "implemented_capabilities": ["account_authorization", "read_page_posts", "read_page_videos"],
-        "planned_capabilities": ["نشر المنشورات", "الجدولة الخلفية", "التحليلات الموسعة"],
+        "implemented_capabilities": ["account_authorization", "read_page_posts", "read_page_videos", "publish_page_text"],
+        "planned_capabilities": ["نشر الصور والفيديو", "الجدولة الخلفية", "التحليلات الموسعة"],
         "requirements_ar": ["تطبيق Meta للمطورين", "تفويض OAuth", "الصلاحيات ومراجعة التطبيق حسب الاستخدام"],
-        "limitations_ar": "يوفر هذا الإصدار ربط صفحات Facebook وقراءة منشوراتها وفيديوهاتها عبر Meta OAuth. النشر والرسائل والجدولة تحتاج مراحل منفصلة وصلاحيات إضافية.",
+        "limitations_ar": "يوفر هذا الإصدار ربط صفحات Facebook وقراءة محتواها ونشر المنشورات النصية بعد منح pages_manage_posts فعليًا. نشر الصور والفيديو والرسائل والجدولة الخلفية ما زالت غير مفعّلة.",
         "required_environment": ["META_APP_ID", "META_APP_SECRET", "META_REDIRECT_URI"],
     },
     {
