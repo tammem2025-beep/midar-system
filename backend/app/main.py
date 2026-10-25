@@ -42,6 +42,7 @@ from .integrations.authorization import (AuthorizationTransactionError, cleanup_
 from .integrations.catalog import PROVIDER_REGISTRY, public_provider_catalog
 from .integrations.registry import get_connector
 from .integrations.meta_graph import (META_SCOPES, MetaDeliveryUnknown, MetaGraphError, access_token_for_account, exchange_meta_code, exchange_for_long_lived_token, fetch_account_media, get_meta_config, list_granted_permissions, list_managed_pages, make_meta_authorization_url, publish_page_text as meta_publish_page_text)
+from .integrations.oauth_social import (SocialDeliveryUnknown, SocialOAuthError, exchange_and_identify, get_social_oauth_config, make_social_authorization_url, publish_text as publish_social_text)
 from .integrations.credential_store import CredentialScopeError, CredentialStoreError, load_provider_credential, store_provider_credential
 from .security_tokens import TokenVaultError
 
@@ -918,7 +919,12 @@ def integration_status(ctx: AuthContext = Depends(get_context), db: Session = De
         keys = list(definition["required_environment"])
         present = all(bool(os.getenv(key, "").strip()) for key in keys) if keys else False
         meta_provider = provider in {"Facebook", "Instagram"}
-        implemented = (provider == "Telegram" and definition["implementation_status"] in {"partial", "implemented"}) or meta_provider
+        oauth_provider_keys = {"X": "x", "LinkedIn": "linkedin", "TikTok": "tiktok", "YouTube": "youtube"}
+        social_oauth_key = oauth_provider_keys.get(provider)
+        implemented = (
+            (provider == "Telegram" and definition["implementation_status"] in {"partial", "implemented"})
+            or meta_provider or social_oauth_key is not None
+        )
         connected_accounts = 0
         publish_ready_accounts = 0
         if meta_provider:
@@ -954,6 +960,38 @@ def integration_status(ctx: AuthContext = Depends(get_context), db: Session = De
                 "connected_read_only" if connected_accounts else
                 ("authorization_required" if config_ready else "not_configured")
             )
+        elif social_oauth_key:
+            connected_accounts = int(db.scalar(select(func.count(SocialAccount.id)).where(
+                SocialAccount.organization_id == ctx.organization.id,
+                SocialAccount.platform == provider,
+                SocialAccount.connection_status == "connected",
+                SocialAccount.provider_account_id.is_not(None),
+            )) or 0)
+            config_ready = bool(get_social_oauth_config(social_oauth_key))
+            if connected_accounts:
+                scope_rows = db.scalars(
+                    select(IntegrationCredential.scopes_json)
+                    .join(SocialAccount, SocialAccount.id == IntegrationCredential.social_account_id)
+                    .where(
+                        IntegrationCredential.organization_id == ctx.organization.id,
+                        IntegrationCredential.provider == provider,
+                        IntegrationCredential.status == "active",
+                        SocialAccount.platform == provider,
+                        SocialAccount.connection_status == "connected",
+                    )
+                ).all()
+                write_scope = {"X": "tweet.write", "LinkedIn": "w_member_social"}.get(provider)
+                if write_scope:
+                    for raw_scopes in scope_rows:
+                        try:
+                            granted = json.loads(raw_scopes)
+                        except (TypeError, ValueError, json.JSONDecodeError):
+                            granted = []
+                        if isinstance(granted, list) and write_scope in granted:
+                            publish_ready_accounts += 1
+            state = "connected_read_write" if publish_ready_accounts else (
+                "connected" if connected_accounts else "authorization_required" if config_ready else "not_configured"
+            )
         elif implemented:
             state = "configured_channel_verification_required" if present else "not_configured"
         else:
@@ -971,12 +1009,14 @@ def integration_status(ctx: AuthContext = Depends(get_context), db: Session = De
             "description": definition["description_ar"],
             "implemented_capabilities": list(definition["implemented_capabilities"]),
             "planned_capabilities": list(definition["planned_capabilities"]),
-            "connected_accounts": connected_accounts if meta_provider else 0,
-            "publish_ready_accounts": publish_ready_accounts if provider == "Facebook" else 0,
+            "connected_accounts": connected_accounts if (meta_provider or social_oauth_key) else 0,
+            "publish_ready_accounts": publish_ready_accounts if (provider == "Facebook" or social_oauth_key) else 0,
             "supported_actions": (
                 ["verify_channel", "publish_text"] if provider == "Telegram" else
                 (["account_authorization", "read_page_posts", "read_page_videos"] + (["publish_page_text"] if publish_ready_accounts else [])) if provider == "Facebook" else
-                list(definition["implemented_capabilities"])
+                (["account_authorization", "read_profile"] + (["publish_text"] if publish_ready_accounts else [])) if provider in {"X", "LinkedIn"} else
+                (["account_authorization", "read_profile"] if provider in {"TikTok", "YouTube"} else
+                list(definition["implemented_capabilities"]))
             ) if implemented else [],
         })
 
@@ -1001,7 +1041,11 @@ def integration_status(ctx: AuthContext = Depends(get_context), db: Session = De
         item["platform"] == "Facebook" and int(item.get("publish_ready_accounts", 0)) > 0
         for item in providers
     )
-    ready = bool(external_publishing_enabled and (telegram_destination_ready or facebook_destination_ready))
+    oauth_text_destination_ready = any(
+        item["platform"] in {"X", "LinkedIn"} and int(item.get("publish_ready_accounts", 0)) > 0
+        for item in providers
+    )
+    ready = bool(external_publishing_enabled and (telegram_destination_ready or facebook_destination_ready or oauth_text_destination_ready))
     return {
         "providers": providers,
         "external_actions_enabled": ready,
@@ -1370,17 +1414,15 @@ def delete_post(post_id: str, ctx: AuthContext = Depends(get_context), db: Sessi
 async def publish_post(post_id: str, ctx: AuthContext = Depends(get_context), db: Session = Depends(get_db)):
     require_write(ctx, "posts")
     if not env_flag("ENABLE_EXTERNAL_PUBLISHING", default=False):
-        raise HTTPException(
-            status_code=423,
-            detail="النشر الخارجي متوقف افتراضيًا في هذه المرحلة. لم يتم إرسال أي محتوى. لا تفعّل ENABLE_EXTERNAL_PUBLISHING=true إلا بعد مراجعة الإعدادات وإقرار بدء الاختبار الخارجي.",
-        )
+        raise HTTPException(status_code=423, detail="النشر الخارجي متوقف افتراضيًا. لم يتم إرسال أي محتوى؛ راجع إعدادات الخادم قبل تفعيله.")
     post = db.scalar(select(Post).where(Post.id == post_id, Post.organization_id == ctx.organization.id))
     if not post:
         not_found("المنشور")
-    if post.platform not in {"Telegram", "Facebook"}:
-        raise HTTPException(status_code=501, detail="النشر الخارجي متاح حاليًا للنصوص على Telegram وصفحات Facebook فقط")
+    supported_platforms = {"Telegram", "Facebook", "X", "LinkedIn"}
+    if post.platform not in supported_platforms:
+        raise HTTPException(status_code=501, detail="النشر الخارجي النصي متاح حاليًا لصفحات Facebook وX وLinkedIn وقنوات Telegram فقط")
     if post.status in {"published", "publishing", "delivery_unknown"}:
-        raise HTTPException(status_code=409, detail="حالة المنشور لا تسمح بإعادة الإرسال؛ تحقق من القناة قبل أي محاولة جديدة")
+        raise HTTPException(status_code=409, detail="حالة المنشور لا تسمح بإعادة الإرسال؛ تحقق من الوجهة قبل أي محاولة جديدة")
     if post.status not in {"draft", "scheduled", "approved", "failed"}:
         raise HTTPException(status_code=409, detail="لا يمكن نشر هذا المنشور من حالته الحالية")
     if not post.social_account_id:
@@ -1391,44 +1433,41 @@ async def publish_post(post_id: str, ctx: AuthContext = Depends(get_context), db
         SocialAccount.platform == post.platform,
     ))
     if not account or account.connection_status != "connected" or not account.provider_account_id:
-        raise HTTPException(status_code=409, detail="تحقق من الوجهة الاجتماعية أولًا من شاشة الحسابات الاجتماعية")
+        raise HTTPException(status_code=409, detail="تحقق من الحساب الاجتماعي أولًا من شاشة الحسابات")
 
     telegram_token = ""
     meta_config = None
-    facebook_credential = None
+    credential = None
+    required_scope = {"Facebook": "pages_manage_posts", "X": "tweet.write", "LinkedIn": "w_member_social"}.get(post.platform)
     if post.platform == "Telegram":
         telegram_token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
         if not telegram_token:
             raise HTTPException(status_code=503, detail="موصل Telegram غير مهيأ على الخادم")
     else:
-        meta_config = get_meta_config()
-        if not meta_config:
-            raise HTTPException(status_code=503, detail="إعداد Meta غير مكتمل على الخادم")
+        if post.platform == "Facebook":
+            meta_config = get_meta_config()
+            if not meta_config:
+                raise HTTPException(status_code=503, detail="إعداد Meta غير مكتمل على الخادم")
         try:
-            facebook_credential = load_provider_credential(
+            credential = load_provider_credential(
                 db, organization_id=ctx.organization.id, social_account_id=account.id,
             )
         except (CredentialStoreError, CredentialScopeError, TokenVaultError) as exc:
-            raise HTTPException(status_code=409, detail="تعذر فتح بيانات اعتماد صفحة Facebook بأمان؛ أعد ربط Meta.") from exc
-        if facebook_credential is None:
-            raise HTTPException(status_code=409, detail="لا توجد بيانات اعتماد Meta لهذه الصفحة؛ أعد ربط Facebook.")
-        if "pages_manage_posts" not in facebook_credential.scopes:
-            raise HTTPException(
-                status_code=409,
-                detail="هذه الصفحة متصلة للقراءة فقط. أعد ربط Meta ووافق على صلاحية pages_manage_posts قبل النشر.",
-            )
+            raise HTTPException(status_code=409, detail="تعذر فتح بيانات اعتماد الحساب بأمان؛ أعد ربط المنصة.") from exc
+        if credential is None:
+            raise HTTPException(status_code=409, detail="لا توجد بيانات اعتماد مشفرة لهذا الحساب؛ أعد ربط المنصة.")
+        if required_scope and required_scope not in credential.scopes:
+            raise HTTPException(status_code=409, detail=f"لم يمنح الحساب صلاحية {required_scope}. أعد التفويض مع الموافقة على الصلاحية المطلوبة.")
 
     text_body = (post.content or "").strip() or post.title.strip()
     if not text_body:
         raise HTTPException(status_code=422, detail="أضف نصًا للمنشور قبل النشر")
-    max_chars = 4096 if post.platform == "Telegram" else 60000
+    max_chars = 4096 if post.platform == "Telegram" else 28000 if post.platform == "X" else 3000 if post.platform == "LinkedIn" else 60000
     if len(text_body) > max_chars:
         raise HTTPException(status_code=422, detail=f"يتجاوز النص الحد المسموح لهذه المنصة وهو {max_chars} حرفًا")
 
-    # Reserve atomically. Timeouts are ambiguous; an ambiguous send is never auto-retried.
     result = db.execute(update(Post).where(
-        Post.id == post.id,
-        Post.organization_id == ctx.organization.id,
+        Post.id == post.id, Post.organization_id == ctx.organization.id,
         Post.status.in_(["draft", "scheduled", "approved", "failed"]),
     ).values(status="publishing", publish_error=None, updated_at=utcnow()))
     if result.rowcount != 1:
@@ -1439,26 +1478,22 @@ async def publish_post(post_id: str, ctx: AuthContext = Depends(get_context), db
 
     try:
         if post.platform == "Telegram":
-            connector = get_connector(
-                account.platform,
-                telegram_verify_fn=telegram_verify_channel,
-                telegram_publish_fn=telegram_send_text,
-            )
+            connector = get_connector(account.platform, telegram_verify_fn=telegram_verify_channel, telegram_publish_fn=telegram_send_text)
             if connector is None or not connector.capabilities.publish_text:
                 raise TelegramAPIError("لا يوجد موصل نشر نصي فعّال لقناة Telegram.")
             delivery = await connector.publish_text(telegram_token, account.provider_account_id, text_body)
+        elif post.platform == "Facebook":
+            delivery = await meta_publish_page_text(meta_config, account.provider_account_id, credential.access_token, text_body)
         else:
-            delivery = await meta_publish_page_text(
-                meta_config, account.provider_account_id, facebook_credential.access_token, text_body,
-            )
-    except (TelegramDeliveryUnknown, MetaDeliveryUnknown) as exc:
+            delivery = await publish_social_text(post.platform.casefold(), credential.access_token, account.provider_account_id, text_body)
+    except (TelegramDeliveryUnknown, MetaDeliveryUnknown, SocialDeliveryUnknown) as exc:
         post.status = "delivery_unknown"
-        post.publish_error = "تعذر تأكيد نتيجة الطلب. افحص الصفحة أو القناة الخارجية قبل أي إعادة محاولة."
+        post.publish_error = "تعذر تأكيد نتيجة الطلب. افحص الحساب الخارجي قبل أي إعادة محاولة."
         post.updated_at = utcnow()
         audit(db, ctx, f"{post.platform.lower()}.publish_outcome_unknown", "post", post.id, {"account_id": account.id})
         db.commit()
         raise HTTPException(status_code=502, detail=post.publish_error) from exc
-    except (TelegramAPIError, MetaGraphError) as exc:
+    except (TelegramAPIError, MetaGraphError, SocialOAuthError) as exc:
         post.status = "failed"
         post.publish_error = str(exc)[:1000]
         post.updated_at = utcnow()
@@ -1473,9 +1508,7 @@ async def publish_post(post_id: str, ctx: AuthContext = Depends(get_context), db
     post.publish_error = None
     post.updated_at = utcnow()
     account.last_synced_at = utcnow()
-    audit(db, ctx, f"{post.platform.lower()}.published", "post", post.id, {
-        "account_id": account.id, "provider_post_id": post.provider_post_id,
-    })
+    audit(db, ctx, f"{post.platform.lower()}.published", "post", post.id, {"account_id": account.id, "provider_post_id": post.provider_post_id})
     db.commit()
     db.refresh(post)
     return post
@@ -1570,6 +1603,173 @@ def delete_task(task_id: str, ctx: AuthContext = Depends(get_context), db: Sessi
     if not obj: not_found("المهمة")
     audit(db, ctx, "deleted", "task", obj.id); db.delete(obj); db.commit(); return Response(status_code=204)
 
+
+
+def _social_oauth_cookie_name(provider: str, state: str) -> str:
+    digest = hashlib.sha256(f"{provider}:{state}".encode("utf-8")).hexdigest()[:24]
+    return f"m_oauth_{provider}_bind_{digest}"
+
+
+def _social_oauth_redirect(result: str, provider: str) -> RedirectResponse:
+    allowed = {"connected", "access_denied", "invalid_state", "not_configured", "connection_failed"}
+    code = result if result in allowed else "connection_failed"
+    response = RedirectResponse(url=f"/?provider_result={code}&provider={provider}", status_code=303)
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return response
+
+
+def _upsert_oauth_social_account(db: Session, ctx: AuthContext, identity) -> SocialAccount:
+    platform = {"x": "X", "linkedin": "LinkedIn", "tiktok": "TikTok", "youtube": "YouTube"}[identity.provider]
+    account = db.scalar(select(SocialAccount).where(
+        SocialAccount.organization_id == ctx.organization.id,
+        SocialAccount.platform == platform,
+        SocialAccount.provider_account_id == identity.external_id,
+    ))
+    handle = (identity.handle or f"{identity.provider}:{identity.external_id}")[:180]
+    collision = db.scalar(select(SocialAccount).where(
+        SocialAccount.organization_id == ctx.organization.id,
+        SocialAccount.platform == platform, SocialAccount.handle == handle,
+    ))
+    if collision is not None and (account is None or collision.id != account.id):
+        handle = f"{identity.provider}:{identity.external_id}"[:180]
+        collision = db.scalar(select(SocialAccount).where(
+            SocialAccount.organization_id == ctx.organization.id,
+            SocialAccount.platform == platform, SocialAccount.handle == handle,
+        ))
+        if collision is not None and (account is None or collision.id != account.id):
+            handle = None
+    if account is None:
+        account = SocialAccount(
+            organization_id=ctx.organization.id, platform=platform,
+            account_name=identity.account_name[:160], handle=handle,
+            connection_status="connected", provider_account_id=identity.external_id,
+            last_synced_at=utcnow(),
+        )
+        db.add(account)
+    else:
+        account.account_name = identity.account_name[:160]
+        account.handle = handle
+        account.connection_status = "connected"
+        account.provider_account_id = identity.external_id
+        account.last_synced_at = utcnow()
+    db.flush()
+    store_provider_credential(
+        db, organization_id=ctx.organization.id, social_account_id=account.id,
+        actor_user_id=ctx.user.id, provider=platform, access_token=identity.access_token,
+        refresh_token=identity.refresh_token, token_type=identity.token_type,
+        scopes=identity.scopes, expires_at=identity.expires_at,
+    )
+    return account
+
+
+@app.post(f"{API_PREFIX}/integrations/oauth/{'{'}provider{'}'}/connect-url")
+def social_oauth_connect_url(
+    provider: str, request: Request, ctx: AuthContext = Depends(get_context), db: Session = Depends(get_db),
+):
+    require_roles(ctx, {"owner", "admin"})
+    provider = (provider or "").casefold()
+    if provider not in {"x", "linkedin", "tiktok", "youtube"}:
+        raise HTTPException(status_code=404, detail="موصل OAuth غير معروف.")
+    config = get_social_oauth_config(provider)
+    if config is None:
+        raise HTTPException(status_code=503, detail=f"إعداد OAuth الخاص بـ {provider} غير مكتمل في إعدادات M على الخادم.")
+    cleanup_expired_authorization_transactions(db)
+    try:
+        challenge = create_authorization_transaction(
+            db, provider=provider, purpose="connect", user_id=ctx.user.id,
+            organization_id=ctx.organization.id, auth_version=int(ctx.user.auth_version or 0),
+            ttl_seconds=600,
+        )
+        db.commit()
+    except AuthorizationTransactionError as exc:
+        db.rollback()
+        raise HTTPException(status_code=403, detail="لا يمكن بدء ربط هذه المنصة لهذا المستخدم أو مساحة العمل.") from exc
+    response = JSONResponse({
+        "provider": provider,
+        "authorization_url": make_social_authorization_url(config, challenge.state, challenge.code_challenge),
+    })
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.set_cookie(
+        key=_social_oauth_cookie_name(provider, challenge.state), value=challenge.browser_binding,
+        max_age=600, path=f"{API_PREFIX}/integrations/oauth/{provider}/callback",
+        secure=_google_cookie_secure(request), httponly=True, samesite="lax",
+    )
+    return response
+
+
+@app.get(f"{API_PREFIX}/integrations/oauth/{'{'}provider{'}'}/callback")
+async def social_oauth_callback(
+    provider: str, request: Request, code: str | None = None, state: str | None = None,
+    error: str | None = None, scopes: str | None = None, scope: str | None = None,
+    db: Session = Depends(get_db),
+):
+    provider = (provider or "").casefold()
+    if provider not in {"x", "linkedin", "tiktok", "youtube"}:
+        return _social_oauth_redirect("not_configured", "unknown")
+    if not state or len(state) > 256:
+        return _social_oauth_redirect("invalid_state", provider)
+    state_hash = hashlib.sha256(state.encode("utf-8")).hexdigest()
+    stored = db.get(OAuthTransaction, state_hash)
+    cookie_name = _social_oauth_cookie_name(provider, state)
+    secure_cookie = _google_cookie_secure(request)
+    if not stored or stored.provider != provider or stored.purpose != "connect":
+        return _social_oauth_redirect("invalid_state", provider)
+    try:
+        consumed = consume_authorization_transaction(
+            db, provider=provider, purpose="connect", state=state,
+            browser_binding=request.cookies.get(cookie_name, ""),
+        )
+        db.commit()
+    except AuthorizationTransactionError as exc:
+        if exc.cleanup_performed:
+            db.commit()
+        else:
+            db.rollback()
+        return _social_oauth_redirect("invalid_state", provider)
+
+    def finish(result: str) -> RedirectResponse:
+        response = _social_oauth_redirect(result, provider)
+        response.delete_cookie(
+            key=cookie_name, path=f"{API_PREFIX}/integrations/oauth/{provider}/callback",
+            secure=secure_cookie, httponly=True, samesite="lax",
+        )
+        return response
+
+    if error:
+        return finish("access_denied")
+    if not code or len(code) > 4096:
+        return finish("invalid_state")
+    config = get_social_oauth_config(provider)
+    actor = db.get(User, consumed.user_id) if consumed.user_id else None
+    organization = db.get(Organization, consumed.organization_id) if consumed.organization_id else None
+    membership = db.scalar(select(Membership).where(
+        Membership.user_id == consumed.user_id, Membership.organization_id == consumed.organization_id,
+    )) if consumed.user_id and consumed.organization_id else None
+    if config is None or not os.getenv("PROVIDER_TOKEN_ENCRYPTION_KEY", "").strip():
+        return finish("not_configured")
+    if not actor or not actor.is_active or not organization or membership is None or membership.role not in {"owner", "admin"}:
+        return finish("invalid_state")
+    ctx = AuthContext(actor, membership, organization)
+    try:
+        identity = await exchange_and_identify(
+            config, code=code, code_verifier=consumed.code_verifier, scope_hint=scopes or scope or "",
+        )
+        _upsert_oauth_social_account(db, ctx, identity)
+        audit(db, ctx, f"integration.{provider}_connected", "provider", None, {
+            "account_id": identity.external_id, "scope_count": len(identity.scopes),
+        })
+        db.commit()
+        return finish("connected")
+    except (SocialOAuthError, CredentialStoreError, CredentialScopeError, TokenVaultError, IntegrityError):
+        db.rollback()
+        security_logger.warning("social_oauth_connection_failed provider=%s organization_id=%s", provider, organization.id)
+        return finish("connection_failed")
+    except Exception:
+        db.rollback()
+        security_logger.exception("social_oauth_connection_unexpected_failure provider=%s organization_id=%s", provider, organization.id)
+        return finish("connection_failed")
 
 
 def _meta_binding_cookie_name(state: str) -> str:
