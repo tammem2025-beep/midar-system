@@ -47,6 +47,20 @@ def _error_message(response: httpx.Response) -> str:
         pass
     return "Meta could not complete the operation. Check the app configuration and permissions."
 
+def access_token_for_account(platform: str, *, user_access_token: str, page_access_token: str) -> str:
+    """Choose the token required by each Graph API surface."""
+    if platform == "Facebook":
+        token = page_access_token
+    elif platform == "Instagram":
+        # Instagram Graph API with Facebook Login uses the Facebook User token.
+        token = user_access_token
+    else:
+        raise MetaGraphError("Only Facebook Pages and linked Instagram Professional accounts are supported.")
+    if not isinstance(token, str) or not token:
+        raise MetaGraphError("Meta did not provide the required access token for this account.")
+    return token
+
+
 async def _get_json(url: str, params: dict[str, str | int] | None = None) -> dict:
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(18.0, connect=6.0), follow_redirects=False) as client:
