@@ -41,13 +41,15 @@ async function configureGoogleLogin(setupRequired) {
   if (!button || !note) return;
   try {
     const config = await api('/auth/google/config', { headers: {} });
-    button.disabled = !config.enabled || !!setupRequired;
+    button.disabled = !config.enabled;
+    const label = button.querySelector('span');
+    if (label) label.textContent = setupRequired ? 'إنشاء مساحة العمل باستخدام Google' : 'المتابعة باستخدام Google';
     if (!config.enabled) {
-      note.textContent = 'تسجيل Google غير مهيأ بعد. أكمل إعداد OAuth على الخادم أولًا.';
+      note.textContent = 'تسجيل Google غير مهيأ بعد. أضف بيانات OAuth إلى إعدادات M على الخادم أولًا.';
     } else if (setupRequired) {
-      note.textContent = 'أنشئ حساب مالك مساحة العمل أولًا، ثم اربط Google من الإعدادات لتفعيل الدخول به.';
+      note.textContent = 'يمكنك إنشاء مساحة العمل الأولى بهوية Google الموثقة، دون إنشاء كلمة مرور منفصلة.';
     } else {
-      note.textContent = 'يمكن الدخول بحساب Google بعد ربطه من الإعدادات داخل المنصة. تسجيل Google لا يربط تلقائيًا حسابات السوشيال ميديا.';
+      note.textContent = 'سجّل الدخول بحساب Google المرتبط مسبقًا. ربط Google للهوية لا يربط صفحات التواصل تلقائيًا.';
     }
   } catch (_) {
     button.disabled = true;
@@ -80,6 +82,7 @@ async function processGoogleRedirect() {
 
 const MIDAR_GOOGLE_MESSAGES = {
   not_configured: 'تسجيل Google غير مهيأ على الخادم.',
+  setup_complete: 'تم إعداد مساحة العمل بالفعل. سجّل الدخول بالحساب المرتبط بها.',
   access_denied: 'ألغيت عملية تسجيل الدخول أو ربط Google.',
   invalid_state: 'انتهت صلاحية العملية أو تعذر التحقق منها. ابدأ من جديد.',
   exchange_failed: 'تعذر التحقق من Google. تحقق من إعداد OAuth وحاول مجددًا.',
@@ -169,7 +172,8 @@ async function startGoogleLogin(button) {
   const previous = button.innerHTML;
   button.innerHTML = '<span>جارٍ الاتصال بـ Google…</span>';
   try {
-    const out = await api('/auth/google/login-url', { method: 'POST' });
+    const isFirstSetup = document.querySelector('#authForm')?.dataset.mode === 'setup';
+    const out = await api(isFirstSetup ? '/auth/google/setup-url' : '/auth/google/login-url', { method: 'POST' });
     if (!out.authorization_url || !out.authorization_url.startsWith('https://accounts.google.com/')) throw new Error('أعاد الخادم رابط تفويض غير متوقع.');
     window.location.assign(out.authorization_url);
   } catch (err) {
@@ -193,6 +197,8 @@ async function startGoogleLink(button) {
 }
 
 document.addEventListener('click', event => {
+  const workspaceButton = event.target.closest('[data-open-workspace-settings]');
+  if (workspaceButton) { midarSettingsTab = 'workspace'; loadPage('settings'); return; }
   const loginButton = event.target.closest('#googleLoginBtn');
   if (loginButton) { startGoogleLogin(loginButton); return; }
   const linkButton = event.target.closest('[data-google-link]');
@@ -207,6 +213,13 @@ document.addEventListener('click', event => {
     return;
   }
   if (event.target.closest('#settingsLogoutBtn')) performLogout();
+});
+
+document.addEventListener('keydown', event => {
+  if (event.key !== 'Escape') return;
+  const menu = document.querySelector('#accountMenu');
+  const trigger = document.querySelector('#accountMenuBtn');
+  if (menu && !menu.classList.contains('hidden')) { menu.classList.add('hidden'); trigger?.setAttribute('aria-expanded', 'false'); trigger?.focus({ preventScroll: true }); }
 });
 
 document.addEventListener('change', event => {
