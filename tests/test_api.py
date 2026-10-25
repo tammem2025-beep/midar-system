@@ -360,7 +360,7 @@ def test_local_inbox_records_are_explicitly_not_sent(client: TestClient):
     contact = client.post("/api/v1/contacts", headers=headers, json={"name": "عميل محادثة"})
     assert contact.status_code == 201
     conversation = client.post("/api/v1/conversations", headers=headers, json={
-        "channel": "WhatsApp", "contact_id": contact.json()["id"], "status": "open"
+        "channel": "Telegram", "contact_id": contact.json()["id"], "status": "open"
     })
     assert conversation.status_code == 201
     conversation_id = conversation.json()["id"]
