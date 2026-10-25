@@ -122,7 +122,7 @@ def test_same_release_social_feed_and_keyboard_menu_improvements():
     assert "selected==='reels'" in app
     assert 'data-view-remote-media="' in app
     assert "event.key==='Escape'" in app
-    assert "build=patch1" in page
+    assert 'href="/midar-ui.css?v=0.23.0"' in page
     assert "m-shell-v0230-patch1" in sw
     assert "Same-release visual patch" in brand
     assert "Same-release visual patch" in bundle
