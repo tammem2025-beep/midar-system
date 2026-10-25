@@ -18,7 +18,7 @@ function formatLocalInput(value,timeZone=uiTimezone){const p=zoneParts(value,tim
 function localInputToIso(value,timeZone=uiTimezone){if(!value)return null;const m=String(value).match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/);if(!m)throw new Error('صيغة التاريخ أو الوقت غير صحيحة');const [,ys,mos,ds,hs,mis]=m;const target=Date.UTC(+ys,+mos-1,+ds,+hs,+mis);let guess=target;for(let i=0;i<4;i++){const p=zoneParts(new Date(guess),timeZone);if(!p)throw new Error('تعذر قراءة المنطقة الزمنية لمساحة العمل');const represented=Date.UTC(+p.year,+p.month-1,+p.day,+p.hour,+p.minute);const delta=target-represented;if(!delta)break;guess+=delta}const check=zoneParts(new Date(guess),timeZone);if(!check||check.year!==ys||check.month!==mos||check.day!==ds||check.hour!==hs||check.minute!==mis)throw new Error('هذا الوقت غير صالح في المنطقة الزمنية لمساحة العمل بسبب تغيير التوقيت؛ اختر وقتًا آخر');return new Date(guess).toISOString()}
 function dateTime(v){if(!v)return '—';const d=parseApiDate(v);return isNaN(d)?'—':d.toLocaleString('ar-PS',{dateStyle:'medium',timeStyle:'short',timeZone:uiTimezone})}function dateOnly(v){if(!v)return '—';const d=parseApiDate(v);return isNaN(d)?'—':d.toLocaleDateString('ar-PS',{year:'numeric',month:'short',day:'numeric',timeZone:uiTimezone})}function money(v){return new Intl.NumberFormat('ar-PS',{style:'currency',currency:'ILS',maximumFractionDigits:0}).format(Number(v||0))}function badgeForPost(s){return ({draft:status('مسودة','muted'),in_review:status('قيد المراجعة','info'),approved:status('معتمد','good'),changes_requested:status('مطلوب تعديل','warn'),scheduled:status('موعد محفوظ داخل المنصة','warn'),cancelled:status('ملغى','bad'),publishing:status('جارٍ الإرسال','info'),published:status('تم النشر','good'),failed:status('فشل النشر','bad'),delivery_unknown:status('نتيجة غير مؤكدة','warn')})[s]||status(s)}function badgeForTask(s){return ({open:status('مفتوحة','warn'),in_progress:status('قيد التنفيذ','info'),done:status('مكتملة','good'),cancelled:status('ملغاة','muted')})[s]||status(s)}function roleName(r){return ({owner:'مالك مساحة العمل',admin:'مدير',editor:'مسؤول محتوى',support:'خدمة العملاء والمبيعات',analyst:'محلل'})[r]||r}
 function showAuth(setup){$('#appShell').classList.add('hidden');$('#authScreen').classList.remove('hidden');$('#authForm').reset();$('#authMessage').innerHTML='';$('#setupFields').classList.toggle('hidden',!setup);$('#setupFields').querySelectorAll('input,select,textarea').forEach(el=>{el.disabled=!setup;el.required=!!setup;});/*LOGIN_REQUIRED_FIELDS_FIX_074*/$('#passwordHelp').classList.toggle('hidden',!setup);$('#authTitle').textContent=setup?'إعداد مساحة العمل لأول مرة':'مرحبًا بعودتك';$('#authSubtitle').textContent=setup?'أنشئ حساب المالك وابدأ مساحة عملك الخاصة. هذه خطوة إعداد أولية تنفذ مرة واحدة.':'سجّل الدخول إلى مساحة العمل الخاصة بك.';$('#authSubmit').textContent=setup?'إنشاء مساحة العمل':'تسجيل الدخول';$('#authForm').dataset.mode=setup?'setup':'login';$('#authForm [name=password]').autocomplete=setup?'new-password':'current-password';$('#authForm [name=password]').minLength=setup?12:1}
-async function boot(){let googleNotice=null;try{googleNotice=await processGoogleRedirect()}catch(e){googleNotice={code:'exchange_failed'}}if('serviceWorker'in navigator && location.protocol!=='file:'){navigator.serviceWorker.register('/sw.js?v=0.23.0').catch(()=>{})}try{const s=await api('/auth/status',{headers:{}});await configureGoogleLogin(s.setup_required);if(!token){showAuth(s.setup_required);if(googleNotice)showGoogleAuthNotice(googleNotice.code);return}try{currentUser=await api('/auth/me')}catch(e){token='';sessionStorage.removeItem('midar_token');showAuth(s.setup_required);if(googleNotice)showGoogleAuthNotice(googleNotice.code);return}await enterApp();if(googleNotice)showGoogleNotice(googleNotice.code);const metaResult=new URLSearchParams(window.location.search).get('meta_result');if(metaResult){const messages={connected:'تم ربط الحسابات الحقيقية عبر Meta.',access_denied:'ألغيت عملية ربط Meta.',no_pages:'لم يعثر Meta على صفحات تديرها أو لم تمنح الصلاحيات المطلوبة.',not_configured:'إعداد Meta غير مكتمل.',setup_required:'تغيرت صلاحيات مساحة العمل؛ سجّل الدخول مجددًا.',connection_failed:'فشل ربط Meta؛ تحقق من إعداد التطبيق والصلاحيات.',invalid_state:'انتهت صلاحية عملية الربط.'};toast(messages[metaResult]||'اكتملت العودة من Meta.');window.history.replaceState({},document.title,window.location.pathname)}}catch(e){showAuth(true);$('#authMessage').innerHTML=`<div class="error">${esc(e.message)}</div>`}}
+async function boot(){let googleNotice=null;try{googleNotice=await processGoogleRedirect()}catch(e){googleNotice={code:'exchange_failed'}}if('serviceWorker'in navigator && location.protocol!=='file:'){navigator.serviceWorker.register('/sw.js?v=0.23.0&build=patch1').catch(()=>{})}try{const s=await api('/auth/status',{headers:{}});await configureGoogleLogin(s.setup_required);if(!token){showAuth(s.setup_required);if(googleNotice)showGoogleAuthNotice(googleNotice.code);return}try{currentUser=await api('/auth/me')}catch(e){token='';sessionStorage.removeItem('midar_token');showAuth(s.setup_required);if(googleNotice)showGoogleAuthNotice(googleNotice.code);return}await enterApp();if(googleNotice)showGoogleNotice(googleNotice.code);const metaResult=new URLSearchParams(window.location.search).get('meta_result');if(metaResult){const messages={connected:'تم ربط الحسابات الحقيقية عبر Meta.',access_denied:'ألغيت عملية ربط Meta.',no_pages:'لم يعثر Meta على صفحات تديرها أو لم تمنح الصلاحيات المطلوبة.',not_configured:'إعداد Meta غير مكتمل.',setup_required:'تغيرت صلاحيات مساحة العمل؛ سجّل الدخول مجددًا.',connection_failed:'فشل ربط Meta؛ تحقق من إعداد التطبيق والصلاحيات.',invalid_state:'انتهت صلاحية عملية الربط.'};toast(messages[metaResult]||'اكتملت العودة من Meta.');window.history.replaceState({},document.title,window.location.pathname)}}catch(e){showAuth(true);$('#authMessage').innerHTML=`<div class="error">${esc(e.message)}</div>`}}
 // LOGIN_FLOW_FIX_073: await app entry and expose post-authentication failures to the user.
 $('#authForm').addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -361,11 +361,16 @@ async function renderAccounts(){
     return `<article class="provider-card"><div class="provider-card-top"><div class="provider-symbol provider-${esc(p.platform.toLowerCase())}">${esc(({Facebook:'f',Instagram:'◎',WhatsApp:'◔',Telegram:'➤',X:'𝕏',YouTube:'▶',TikTok:'♪',LinkedIn:'in'}[p.platform]||'•'))}</div><div class="provider-heading"><h3>${esc(p.platform)}</h3><p>${esc(p.method)}</p></div>${status(label,kind)}</div><p class="provider-description">${esc(p.description_ar||'')}</p>${implemented.length?`<div class="provider-capabilities"><b>متاح في هذه النسخة</b><div class="capability-chips">${implemented.map(x=>`<span class="capability-chip is-live">${esc(x)}</span>`).join('')}</div></div>`:''}<div class="provider-capabilities"><b>${planned.length?'المخطط لاحقًا':'ملاحظات'}</b><div class="capability-chips">${(planned.length?planned:[p.limitations_ar||'لا توجد وظائف خارجية إضافية في هذا الإصدار']).map(x=>`<span class="capability-chip">${esc(x)}</span>`).join('')}</div></div><div class="provider-foot"><span class="help">${esc(p.limitations_ar||'')}</span>${p.docs_url?`<a class="provider-doc-link" href="${esc(p.docs_url)}" target="_blank" rel="noopener noreferrer">وثائق المطور <span aria-hidden="true">↗</span></a>`:''}</div></article>`;
   }).join('');
   const rows=accounts.length?accounts.map(a=>{
-    const verified=a.platform==='Telegram'&&a.connection_status==='connected'&&Boolean(a.provider_account_id);
-    const state=verified?status('تم التحقق من وجهة Telegram','good'):status('سجل محلي غير متحقق','warn');
-    return `<tr><td><span class="platform">${esc(a.platform)}</span></td><td><b>${esc(a.account_name)}</b></td><td>${esc(a.handle||'—')}</td><td>${state}</td><td>${a.platform==='Telegram'&&a.handle&&canWriteArea('accounts')?`<button class="btn btn-small" data-telegram-verify="${esc(a.id)}">تحقق من القناة</button> `:''}${canWriteArea('accounts')?`<button class="btn btn-small btn-danger" data-delete-account="${esc(a.id)}">إزالة من القائمة</button>`:status('عرض فقط','muted')}</td></tr>`;
+    const verifiedTelegram=a.platform==='Telegram'&&a.connection_status==='connected'&&Boolean(a.provider_account_id);
+    const verifiedMeta=['Facebook','Instagram'].includes(a.platform)&&a.connection_status==='connected'&&Boolean(a.provider_account_id);
+    const state=verifiedMeta?status('متصل عبر Meta','good'):verifiedTelegram?status('وجهة Telegram متحققة','good'):status('سجل محلي غير متحقق','warn');
+    const mediaAction=verifiedMeta?'<button class="btn btn-small" data-view-remote-media="'+esc(a.id)+'">عرض المحتوى وReels</button>':'';
+    const telegramAction=a.platform==='Telegram'&&a.handle&&canWriteArea('accounts')?'<button class="btn btn-small" data-telegram-verify="'+esc(a.id)+'">تحقق من القناة</button>':'';
+    const deleteAction=canWriteArea('accounts')?'<button class="btn btn-small btn-danger" data-delete-account="'+esc(a.id)+'">إزالة من القائمة</button>':'';
+    const actions=[mediaAction,telegramAction,deleteAction].filter(Boolean).join(' ');
+    return '<tr><td><span class="platform">'+esc(a.platform)+'</span></td><td><b>'+esc(a.account_name)+'</b></td><td>'+esc(a.handle||'—')+'</td><td>'+state+'</td><td>'+(actions||status('عرض فقط','muted'))+'</td></tr>';
   }).join(''):blankRow(5,'لم تضف حسابات بعد. إضافة سجل لا تعني الاتصال بالمنصة.');
-  $('#pageContent').innerHTML=`${pageHead('الحسابات الاجتماعية','إدارة سجلات الحسابات ومراجعة حالة التكامل الحقيقي',canWriteArea('accounts')?'إضافة حساب':'','new-account')}<div class="notice"><b>شفافية حالة التكامل</b>تظهر البطاقات أدناه ما تم تنفيذه فعلًا وما لا يزال ضمن خارطة الطريق. إضافة حساب إلى القائمة لا تربطه بالمنصة تلقائيًا. لا تدخل رموز الوصول في حقول الحسابات.</div><div class="grid stats">${stat('حسابات مسجلة',accounts.length,'سجلات داخل مساحة العمل','◎')}${stat('وجهات Telegram المتحققة',accounts.filter(a=>a.platform==='Telegram'&&a.connection_status==='connected'&&a.provider_account_id).length,'بعد تحقق Bot API فقط','✓')}${stat('سجلات أخرى غير متحققة',accounts.filter(a=>!(a.platform==='Telegram'&&a.connection_status==='connected'&&a.provider_account_id)).length,'لا يعني ذلك اتصالًا خارجيًا','↻')}${stat('منصات في الكتالوج',catalog.providers.filter(p=>p.platform!=='Other').length,'قابلة للتوسع تدريجيًا','＋')}</div><section class="card provider-section"><div class="card-head"><div><h3>خريطة قدرات المنصات</h3><p>الحالة مستقاة من سجل قدرات النظام، وليست وعدًا بوجود صلاحيات أو موافقات لدى حسابك.</p></div></div><div class="provider-grid">${platformCards}</div></section><section class="card" style="margin-top:16px"><div class="card-head"><div><h3>الحسابات المسجلة</h3><p>السجلات المرتبطة بمساحة العمل الحالية</p></div></div><div class="table-wrap"><table class="table"><thead><tr><th>المنصة</th><th>اسم الحساب</th><th>المعرّف الظاهر</th><th>حالة الربط</th><th>إجراءات</th></tr></thead><tbody>${rows}</tbody></table></div></section>`;
+  $('#pageContent').innerHTML=`${pageHead('الحسابات الاجتماعية','إدارة سجلات الحسابات ومراجعة حالة التكامل الحقيقي',canWriteArea('accounts')?'إضافة حساب':'','new-account')}<div class="notice"><b>شفافية حالة التكامل</b>تظهر البطاقات أدناه ما تم تنفيذه فعلًا وما لا يزال ضمن خارطة الطريق. إضافة حساب إلى القائمة لا تربطه بالمنصة تلقائيًا. لا تدخل رموز الوصول في حقول الحسابات.</div><div class="grid stats">${stat('حسابات مسجلة',accounts.length,'سجلات داخل مساحة العمل','◎')}${stat('حسابات Meta المتصلة',accounts.filter(a=>['Facebook','Instagram'].includes(a.platform)&&a.connection_status==='connected'&&a.provider_account_id).length,'بعد OAuth وصلاحيات المنصة','✓')}${stat('وجهات Telegram المتحققة',accounts.filter(a=>a.platform==='Telegram'&&a.connection_status==='connected'&&a.provider_account_id).length,'بعد تحقق Bot API فقط','➤')}${stat('منصات في الكتالوج',catalog.providers.filter(p=>p.platform!=='Other').length,'قابلة للتوسع تدريجيًا','＋')}</div><section class="card provider-section"><div class="card-head"><div><h3>خريطة قدرات المنصات</h3><p>الحالة مستقاة من سجل قدرات النظام، وليست وعدًا بوجود صلاحيات أو موافقات لدى حسابك.</p></div></div><div class="provider-grid">${platformCards}</div></section><section class="card" style="margin-top:16px"><div class="card-head"><div><h3>الحسابات المسجلة</h3><p>السجلات المرتبطة بمساحة العمل الحالية</p></div></div><div class="table-wrap"><table class="table"><thead><tr><th>المنصة</th><th>اسم الحساب</th><th>المعرّف الظاهر</th><th>حالة الربط</th><th>إجراءات</th></tr></thead><tbody>${rows}</tbody></table></div></section>`;
 }
 async function renderInbox(){const [conversations,contacts]=await Promise.all([api('/conversations'),canReadArea('contacts')?api('/contacts?limit=250'):Promise.resolve([])]);const names=new Map(contacts.map(c=>[c.id,c.name]));$('#pageContent').innerHTML=`${pageHead('صندوق الرسائل','سجلات محادثات داخلية؛ الإرسال والاستقبال الفعليان غير مفعّلين',canWriteArea('inbox')?'محادثة جديدة':'','new-conversation')}<div class=\"notice\"><b>تنبيه تكاملات</b>يمكنك تنظيم سجل محادثة وملاحظات محلية داخل المنصة. لا يتم استقبال رسائل المنصات ولا إرسال ردود إلى العملاء من هذه النسخة.</div><section class=\"card\"><div class=\"table-wrap\"><table class=\"table\"><thead><tr><th>القناة</th><th>العميل</th><th>الحالة</th><th>آخر نشاط</th><th>إجراء</th></tr></thead><tbody>${conversations.length?conversations.map(c=>`<tr><td><span class=\"platform\">${esc(c.channel)}</span></td><td>${esc(names.get(c.contact_id)||'بدون عميل مرتبط')}</td><td>${status(({open:'مفتوحة',pending:'بانتظار المتابعة',closed:'مغلقة'})[c.status]||c.status,c.status==='open'?'good':c.status==='pending'?'warn':'muted')}</td><td>${dateTime(c.last_message_at||c.created_at)}</td><td><button class=\"btn btn-small\" data-open-conversation=\"${esc(c.id)}\">فتح السجل</button></td></tr>`).join(''):blankRow(5,'لا توجد سجلات محادثات بعد.')}</tbody></table></div></section>`}async function renderConversationDetail(conversationId){const [conversations,messages]=await Promise.all([api('/conversations'),api('/conversations/'+conversationId+'/messages')]);const conversation=conversations.find(c=>c.id===conversationId);if(!conversation){toast('المحادثة غير موجودة');return renderInbox()}const contacts=canReadArea('contacts')?await api('/contacts?limit=250'):[];const contact=contacts.find(c=>c.id===conversation.contact_id);$('#topTitle').textContent='تفاصيل المحادثة';$('#topSubtitle').textContent='سجل داخلي غير متصل بالمنصة الخارجية';const history=messages.length?messages.map(m=>`<article class=\"message-entry\"><div class=\"message-meta\"><b>${m.direction==='inbound'?'وارد مسجل':'سجل صادر محلي'}</b><span>${dateTime(m.created_at)}</span>${status(m.delivery_status==='local_only'?'محلي فقط':m.delivery_status,'muted')}</div><p>${esc(m.body)}</p></article>`).join(''):`<div class=\"empty-box\">لا يوجد سجل رسائل في هذه المحادثة.</div>`;$('#pageContent').innerHTML=`${pageHead(contact?.name||'محادثة '+conversation.channel,'هذه الصفحة تحتفظ بسجل محلي فقط. لن يتم إرسال رسالة إلى المنصة.', 'العودة للصندوق','back-inbox')}<div class=\"grid two-col\"><section class=\"card\"><div class=\"card-head\"><div><h3>سجل المحادثة</h3><p>${esc(conversation.channel)} · ${esc(contact?.email||contact?.phone||'لا توجد بيانات اتصال')}</p></div></div><div class=\"message-list\">${history}</div><form id=\"localMessageForm\" data-conversation-id=\"${esc(conversation.id)}\" class=\"local-message-form\"><div class=\"field full\"><label for=\"localMessageBody\">إضافة سجل رسالة محلي</label><textarea id=\"localMessageBody\" name=\"body\" required maxlength=10000 placeholder=\"دوّن رسالة واردة أو مسودة رد للرجوع إليها…\"></textarea></div><div class=\"help\">يُحفظ النص داخل المنصة فقط ولا يتم إرساله إلى WhatsApp أو غيره.</div><button class=\"btn btn-primary\" type=\"submit\">حفظ السجل المحلي</button></form></section><section class=\"card\"><div class=\"card-head\"><div><h3>حالة المتابعة</h3><p>تغيير حالة السجل داخل المنصة</p></div></div><div class=\"form-grid\"><div class=\"field full\"><label for=\"conversationStatus\">الحالة</label><select id=\"conversationStatus\" class=\"field-input\" data-conversation-status=\"${esc(conversation.id)}\"><option value=\"open\" ${conversation.status==='open'?'selected':''}>مفتوحة</option><option value=\"pending\" ${conversation.status==='pending'?'selected':''}>بانتظار المتابعة</option><option value=\"closed\" ${conversation.status==='closed'?'selected':''}>مغلقة</option></select></div><div class=\"field full\"><label>القناة</label><input value=\"${esc(conversation.channel)}\" disabled></div><div class=\"field full\"><label>معرّف السجل</label><input value=\"${esc(conversation.id)}\" disabled></div></div></section></div>`}
 async function renderAudit(){const rows=await api('/audit-logs?limit=200');const detailText=x=>{const d=x.details||{};return d.note?`ملاحظة المراجع: ${d.note}`:d.title?`العنوان: ${d.title}`:d.previous_status?`الحالة السابقة: ${postStatusLabel(d.previous_status)}`:'—'};$('#pageContent').innerHTML=`${pageHead('سجل النشاط','تسجيل تغييرات البيانات والقرارات المهمة')}<section class="card"><div class="table-wrap"><table class="table"><thead><tr><th>الوقت</th><th>الإجراء</th><th>نوع السجل</th><th>التفاصيل</th><th>معرّف السجل</th><th>المستخدم</th></tr></thead><tbody>${rows.length?rows.map(x=>`<tr><td>${dateTime(x.created_at)}</td><td>${esc(x.action)}</td><td>${esc(x.entity_type)}</td><td>${esc(detailText(x))}</td><td>${esc(x.entity_id||'—')}</td><td>${esc(x.user_id===currentUser.id?currentUser.full_name:x.user_id)}</td></tr>`).join(''):blankRow(6,'لا توجد عمليات مسجلة بعد.')}</tbody></table></div></section>`}
@@ -399,113 +404,55 @@ renderAccounts = async function() {
   banner.append(copy, connect);
   const notice = area.querySelector('.notice');
   if (notice) notice.insertAdjacentElement('beforebegin', banner); else area.prepend(banner);
-  for (const account of (cache.accounts || [])) {
-    if (!['Facebook', 'Instagram'].includes(account.platform) || account.connection_status !== 'connected' || !account.provider_account_id) continue;
-    const row = [...area.querySelectorAll('tbody tr')].find(tr => tr.cells && tr.cells[1] && tr.cells[1].textContent.trim() === account.account_name);
-    const actionCell = row && row.cells[row.cells.length - 1];
-    if (!actionCell || actionCell.querySelector('[data-view-remote-media]')) continue;
-    const view = document.createElement('button');
-    view.type = 'button';
-    view.className = 'btn btn-small';
-    view.dataset.viewRemoteMedia = account.id;
-    view.textContent = 'عرض المنشورات والفيديوهات';
-    actionCell.prepend(view);
-    if (row.cells[3]) row.cells[3].textContent = 'متصل عبر Meta';
-  }
 };
+function safeHttpsMediaUrl(value) {
+  try { const url = new URL(String(value || '')); return url.protocol === 'https:' ? url.href : ''; }
+  catch (_) { return ''; }
+}
 
 async function renderMetaMedia(accountId) {
-  const account = (cache.accounts || []).find(item => item.id === accountId);
-  if (!account || !['Facebook', 'Instagram'].includes(account.platform)) { toast('الحساب غير موجود أو لا يدعم جلب محتوى Meta'); return; }
-  const content = document.querySelector('#pageContent');
-  if (!content) return;
-  content.innerHTML = '<section class="card empty-box"><div class="big">↻</div><b>جاري جلب المحتوى الحقيقي</b><p>يتصل M بواجهة Meta Graph API؛ لا تُعرض هنا منشورات تجريبية.</p></section>';
+  const account=(cache.accounts||[]).find(item=>item.id===accountId);
+  if(!account||!['Facebook','Instagram'].includes(account.platform)){toast('الحساب غير موجود أو لا يدعم جلب محتوى Meta');return}
+  const content=document.querySelector('#pageContent');if(!content)return;
+  const loading=document.createElement('section');loading.className='card empty-box';loading.setAttribute('role','status');
+  const loadingTitle=document.createElement('b');loadingTitle.textContent='جاري جلب المحتوى الحقيقي';
+  const loadingText=document.createElement('p');loadingText.textContent='يتصل M بواجهة Meta Graph API؛ لا تُعرض هنا منشورات تجريبية.';loading.append(loadingTitle,loadingText);content.replaceChildren(loading);
   try {
-    const result = await api('/integrations/meta/accounts/' + encodeURIComponent(accountId) + '/media?limit=30');
-    const grid = document.createElement('div');
-    grid.className = 'meta-feed-grid';
-    for (const item of (result.items || [])) {
-      const card = document.createElement('article');
-      card.className = 'meta-feed-card';
-      const frame = document.createElement('div');
-      frame.className = 'meta-feed-media';
-      const type = String(item.media_type || 'TEXT').toUpperCase();
-      const kind = type === 'REELS' ? 'ريلز' : type === 'VIDEO' ? 'فيديو' : type === 'IMAGE' ? 'صورة' : 'منشور';
-      let visual;
-      if ((type === 'VIDEO' || type === 'REELS') && item.media_url) {
-        visual = document.createElement('video');
-        visual.controls = true;
-        visual.preload = 'metadata';
-        visual.src = item.media_url;
-        if (item.thumbnail_url) visual.poster = item.thumbnail_url;
-      } else if (item.thumbnail_url) {
-        visual = document.createElement('img');
-        visual.loading = 'lazy';
-        visual.alt = kind;
-        visual.src = item.thumbnail_url;
-      } else {
-        visual = document.createElement('div');
-        visual.className = 'meta-no-media';
-        visual.textContent = 'لا توجد معاينة وسائط متاحة';
-      }
+    const result=await api('/integrations/meta/accounts/'+encodeURIComponent(accountId)+'/media?limit=30');
+    const items=Array.isArray(result.items)?result.items:[];
+    const heading=document.createElement('div');heading.className='meta-media-heading';
+    const title=document.createElement('h2');title.textContent='محتوى '+account.platform+' — '+account.account_name;
+    const back=document.createElement('button');back.type='button';back.className='btn';back.dataset.action='back-accounts';back.textContent='العودة للحسابات';heading.append(title,back);
+    const source=document.createElement('p');source.className='meta-source-note';source.textContent='المصدر: Meta Graph API — العناصر المتاحة حسب صلاحيات حسابك.';
+    const toolbar=document.createElement('div');toolbar.className='meta-feed-toolbar';
+    const label=document.createElement('label');label.htmlFor='metaMediaFilter';label.textContent='تصفية المحتوى';
+    const filter=document.createElement('select');filter.id='metaMediaFilter';filter.className='field-input';
+    [['all','كل المحتوى'],['reels','Reels / ريلز'],['videos','كل الفيديوهات'],['images','الصور والألبومات'],['other','منشورات أخرى']].forEach(entry=>{const option=document.createElement('option');option.value=entry[0];option.textContent=entry[1];filter.append(option)});
+    const count=document.createElement('span');count.className='meta-media-count';count.setAttribute('aria-live','polite');toolbar.append(label,filter,count);
+    const grid=document.createElement('div');grid.className='meta-feed-grid';
+    for(const item of items){
+      const card=document.createElement('article');card.className='meta-feed-card';
+      const type=String(item.media_type||'TEXT').toUpperCase();card.dataset.mediaType=type;
+      const frame=document.createElement('div');frame.className='meta-feed-media';
+      const kind=type==='REELS'?'ريلز':type==='VIDEO'?'فيديو':(['IMAGE','CAROUSEL_ALBUM'].includes(type)?'صورة / ألبوم':'منشور');
+      const mediaUrl=safeHttpsMediaUrl(item.media_url),thumbnailUrl=safeHttpsMediaUrl(item.thumbnail_url);let visual;
+      if((type==='VIDEO'||type==='REELS')&&mediaUrl){visual=document.createElement('video');visual.controls=true;visual.playsInline=true;visual.preload='metadata';visual.src=mediaUrl;visual.setAttribute('aria-label',kind);if(thumbnailUrl)visual.poster=thumbnailUrl}
+      else if(thumbnailUrl){visual=document.createElement('img');visual.loading='lazy';visual.alt=kind;visual.src=thumbnailUrl}
+      else{visual=document.createElement('div');visual.className='meta-no-media';visual.textContent='لا توجد معاينة وسائط متاحة'}
       frame.append(visual);
-      const copy = document.createElement('div');
-      copy.className = 'meta-feed-copy';
-      const metadata = document.createElement('div');
-      metadata.className = 'meta-feed-meta';
-      const badge = document.createElement('span');
-      badge.className = 'meta-feed-kind';
-      badge.textContent = kind;
-      const date = document.createElement('span');
-      date.textContent = item.timestamp || '';
-      metadata.append(badge, date);
-      const caption = document.createElement('p');
-      caption.textContent = item.caption || 'بدون وصف نصي';
-      copy.append(metadata, caption);
-      if (item.permalink) {
-        const link = document.createElement('a');
-        link.href = item.permalink;
-        link.target = '_blank';
-        link.rel = 'noopener noreferrer';
-        link.textContent = 'فتح المنشور الأصلي ↗';
-        copy.append(link);
-      }
-      card.append(frame, copy);
-      grid.append(card);
+      const copy=document.createElement('div');copy.className='meta-feed-copy';const metadata=document.createElement('div');metadata.className='meta-feed-meta';
+      const badge=document.createElement('span');badge.className='meta-feed-kind';badge.textContent=kind;const date=document.createElement('span');date.textContent=item.timestamp||'';metadata.append(badge,date);
+      const caption=document.createElement('p');caption.textContent=item.caption||'بدون وصف نصي';copy.append(metadata,caption);
+      const permalink=safeHttpsMediaUrl(item.permalink);if(permalink){const link=document.createElement('a');link.href=permalink;link.target='_blank';link.rel='noopener noreferrer';link.textContent='فتح المنشور الأصلي ↗';copy.append(link)}
+      card.append(frame,copy);grid.append(card);
     }
-    const heading = document.createElement('div');
-    heading.className = 'meta-media-heading';
-    const title = document.createElement('h2');
-    title.textContent = 'محتوى ' + account.platform + ' — ' + account.account_name;
-    const back = document.createElement('button');
-    back.type = 'button';
-    back.className = 'btn';
-    back.dataset.action = 'back-accounts';
-    back.textContent = 'العودة للحسابات';
-    heading.append(title, back);
-    const source = document.createElement('p');
-    source.className = 'meta-source-note';
-    source.textContent = 'المصدر: Meta Graph API — طلب مباشر من المنصة.';
-    content.replaceChildren(heading, source);
-    if (grid.childElementCount) content.append(grid);
-    else {
-      const empty = document.createElement('section');
-      empty.className = 'card empty-box';
-      empty.textContent = 'لم تُرجع المنصة منشورات. تحقق من الصلاحيات ونوع الحساب.';
-      content.append(empty);
-    }
-  } catch (error) {
-    const message = document.createElement('section');
-    message.className = 'card empty-box';
-    message.textContent = 'تعذر تحميل المحتوى الحقيقي: ' + (error && error.message ? error.message : 'تحقق من إعداد OAuth والصلاحيات.');
-    content.replaceChildren(message);
-    const back = document.createElement('button');
-    back.type = 'button';
-    back.className = 'btn';
-    back.dataset.action = 'back-accounts';
-    back.textContent = 'العودة للحسابات';
-    content.append(back);
-  }
+    const empty=document.createElement('section');empty.className='card empty-box';empty.textContent='لم تُرجع المنصة منشورات لهذه الصلاحيات. تحقق من نوع الحساب وصلاحيات Meta.';
+    const noMatch=document.createElement('section');noMatch.className='card empty-box hidden';noMatch.textContent='لا توجد عناصر ضمن هذا النوع؛ اختر تصفية أخرى.';
+    const applyFilter=()=>{const selected=filter.value;let visible=0;grid.querySelectorAll('.meta-feed-card').forEach(card=>{const type=card.dataset.mediaType||'TEXT';const video=type==='VIDEO'||type==='REELS';const image=type==='IMAGE'||type==='CAROUSEL_ALBUM';const match=selected==='all'||(selected==='reels'&&type==='REELS')||(selected==='videos'&&video)||(selected==='images'&&image)||(selected==='other'&&!video&&!image);card.hidden=!match;if(match)visible++});count.textContent='العناصر: '+visible+' من '+items.length;noMatch.classList.toggle('hidden',items.length===0||visible>0)};
+    filter.addEventListener('change',applyFilter);applyFilter();
+    if(items.length===0){toolbar.classList.add('hidden');grid.classList.add('hidden')}else{empty.classList.add('hidden')}
+    content.replaceChildren(heading,source,toolbar,grid,empty,noMatch);
+  }catch(error){const message=document.createElement('section');message.className='card empty-box';message.textContent='تعذر تحميل المحتوى الحقيقي: '+(error&&error.message?error.message:'تحقق من إعداد OAuth والصلاحيات.');const back=document.createElement('button');back.type='button';back.className='btn';back.dataset.action='back-accounts';back.textContent='العودة للحسابات';content.replaceChildren(message,back)}
 }
 
 async function renderMedia(){const items=await api('/media?limit=250');$('#pageContent').innerHTML=`${pageHead('مكتبة الوسائط','ملفات مخزنة في مساحة العمل مع تحقق من نوع الملف وحجمه')}<section class="card upload-card"><form id="mediaUploadForm" class="upload-row"><div class="field full"><label for="mediaFile">اختر صورة أو فيديو أو ملف PDF</label><input id="mediaFile" type="file" name="file" accept="image/jpeg,image/png,image/gif,image/webp,video/mp4,video/webm,application/pdf,.jpg,.jpeg,.png,.gif,.webp,.mp4,.webm,.pdf" required><span class="help">صور وPDF حتى 20 ميجابايت، وفيديو حتى 100 ميجابايت. تُخزن الملفات داخل مساحة العمل ولا تكون عامة.</span></div><button class="btn btn-primary" type="submit">رفع الملف</button></form></section><div class="media-grid">${items.length?items.map(x=>`<article class="card media-card"><div class="media-type">${x.media_type.startsWith('image/')?'▧':x.media_type.startsWith('video/')?'▶':'PDF'}</div><div class="media-name" title="${esc(x.original_filename)}">${esc(x.original_filename)}</div><div class="help">${formatBytes(x.size_bytes)} · ${dateOnly(x.created_at)}</div><div class="actions"><button class="btn btn-small" data-media-download="${esc(x.id)}" data-media-name="${esc(x.original_filename)}">تنزيل</button><button class="btn btn-small btn-danger" data-media-delete="${esc(x.id)}">حذف</button></div></article>`).join(''):`<section class="card empty-box"><div class="big">▧</div><b>مكتبة الوسائط فارغة</b><p>ارفع الصور والفيديوهات والملفات التي يحتاجها فريق العمل.</p></section>`}</div>`}
