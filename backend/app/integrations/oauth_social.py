@@ -109,7 +109,11 @@ def get_social_oauth_config(provider: str) -> SocialOAuthConfig | None:
     client_id = os.getenv(definition["client_id"], "").strip()
     client_secret = os.getenv(definition["client_secret"], "").strip()
     redirect_uri = os.getenv(definition["redirect_uri"], "").strip()
+    parsed_redirect = urlparse(redirect_uri)
     if not client_id or not client_secret or not _safe_redirect_uri(redirect_uri):
+        return None
+    # LinkedIn only accepts registered absolute HTTPS callback URLs.
+    if key == "linkedin" and parsed_redirect.scheme != "https":
         return None
     return SocialOAuthConfig(
         provider=key, client_id=client_id, client_secret=client_secret,
@@ -183,6 +187,9 @@ async def exchange_and_identify(
     auth = None
     if config.provider == "tiktok":
         data.update({"client_key": config.client_id, "client_secret": config.client_secret})
+    elif config.provider == "x":
+        # X's confidential-client token exchange uses HTTP Basic authentication.
+        auth = httpx.BasicAuth(config.client_id, config.client_secret)
     else:
         data.update({"client_id": config.client_id, "client_secret": config.client_secret})
     if config.pkce:
