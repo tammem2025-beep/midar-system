@@ -1465,3 +1465,84 @@ def test_meta_account_token_selection_and_reels_normalization():
     })
     assert media["media_type"] == "REELS"
     assert media["permalink"].endswith("/reel/example/")
+
+
+
+def test_meta_oauth_callback_persists_facebook_and_instagram_accounts(client: TestClient, monkeypatch):
+    """A successful Meta callback must persist managed Facebook Pages and linked professional Instagram accounts."""
+    from urllib.parse import parse_qs, urlparse
+    from app.integrations.credential_store import load_provider_credential
+    from app.security_tokens import generate_provider_encryption_key
+
+    monkeypatch.setenv("META_APP_ID", "test-meta-app-id")
+    monkeypatch.setenv("META_APP_SECRET", "test-meta-app-secret")
+    monkeypatch.setenv(
+        "META_REDIRECT_URI",
+        "https://testserver/api/v1/integrations/meta/callback",
+    )
+    monkeypatch.setenv("META_GRAPH_API_VERSION", "v26.0")
+    monkeypatch.setenv("PROVIDER_TOKEN_ENCRYPTION_KEY", generate_provider_encryption_key())
+
+    async def fake_exchange_meta_code(config, code):
+        assert code == "valid-meta-code"
+        return {"access_token": "short-lived-user-token"}
+
+    async def fake_exchange_for_long_lived_token(config, short_lived_token):
+        assert short_lived_token == "short-lived-user-token"
+        return {"access_token": "long-lived-user-token", "expires_in": 5184000}
+
+    async def fake_list_managed_pages(config, user_token):
+        assert user_token == "long-lived-user-token"
+        return [{
+            "id": "facebook-page-test-001",
+            "name": "Test Business Page",
+            "access_token": "facebook-page-access-token",
+            "instagram_business_account": {
+                "id": "instagram-professional-test-001",
+                "username": "midar_test_brand",
+            },
+        }]
+
+    monkeypatch.setattr(main_module, "exchange_meta_code", fake_exchange_meta_code)
+    monkeypatch.setattr(main_module, "exchange_for_long_lived_token", fake_exchange_for_long_lived_token)
+    monkeypatch.setattr(main_module, "list_managed_pages", fake_list_managed_pages)
+
+    owner_headers = create_owner(client, "meta-oauth-owner@example.com")
+    started = client.post("/api/v1/integrations/meta/connect-url", headers=owner_headers)
+    assert started.status_code == 200, started.text
+    params = parse_qs(urlparse(started.json()["authorization_url"]).query)
+    state = params["state"][0]
+
+    callback = client.get(
+        "/api/v1/integrations/meta/callback",
+        params={"state": state, "code": "valid-meta-code"},
+        follow_redirects=False,
+    )
+    assert callback.status_code == 303
+    assert "meta_result=connected&count=2" in callback.headers["location"]
+
+    with SessionLocal() as db:
+        user = db.query(User).filter(User.email == "meta-oauth-owner@example.com").one()
+        membership = db.query(Membership).filter(Membership.user_id == user.id).one()
+        accounts = db.query(SocialAccount).filter(
+            SocialAccount.organization_id == membership.organization_id,
+            SocialAccount.platform.in_(("Facebook", "Instagram")),
+        ).all()
+        by_platform = {account.platform: account for account in accounts}
+        assert set(by_platform) == {"Facebook", "Instagram"}
+        assert by_platform["Facebook"].provider_account_id == "facebook-page-test-001"
+        assert by_platform["Instagram"].provider_account_id == "instagram-professional-test-001"
+        assert all(account.connection_status == "connected" for account in accounts)
+
+        facebook_credential = load_provider_credential(
+            db, organization_id=membership.organization_id,
+            social_account_id=by_platform["Facebook"].id,
+        )
+        instagram_credential = load_provider_credential(
+            db, organization_id=membership.organization_id,
+            social_account_id=by_platform["Instagram"].id,
+        )
+        assert facebook_credential is not None
+        assert instagram_credential is not None
+        assert facebook_credential.access_token == "facebook-page-access-token"
+        assert instagram_credential.access_token == "facebook-page-access-token"
