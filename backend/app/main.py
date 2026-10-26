@@ -1845,8 +1845,10 @@ async def social_oauth_callback(
         return finish("invalid_state")
     ctx = AuthContext(actor, membership, organization)
     try:
+        # Persist scopes reported by the provider's token response. Do not trust
+        # editable callback query parameters as proof that a permission was granted.
         identity = await exchange_and_identify(
-            config, code=code, code_verifier=consumed.code_verifier, scope_hint=scopes or scope or "",
+            config, code=code, code_verifier=consumed.code_verifier,
         )
         _upsert_oauth_social_account(db, ctx, identity)
         audit(db, ctx, f"integration.{provider}_connected", "provider", None, {
