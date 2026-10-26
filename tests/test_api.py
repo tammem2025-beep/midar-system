@@ -1858,3 +1858,104 @@ def test_social_oauth_configs_build_provider_correct_scopes_and_pkce(monkeypatch
     linkedin_url = urlparse(make_social_authorization_url(linkedin, "state-linkedin", "unused"))
     assert linkedin_url.netloc == "www.linkedin.com"
     assert parse_qs(linkedin_url.query)["scope"] == ["openid profile email w_member_social"]
+
+
+
+@pytest.mark.asyncio
+async def test_social_oauth_refresh_uses_provider_specific_credentials(monkeypatch):
+    import httpx
+    from datetime import datetime, timezone
+    from app.integrations.oauth_social import get_social_oauth_config, refresh_provider_access_token
+    import app.integrations.oauth_social as social_oauth
+
+    monkeypatch.setenv("X_CLIENT_ID", "x-refresh-client")
+    monkeypatch.setenv("X_CLIENT_SECRET", "x-refresh-secret")
+    monkeypatch.setenv("X_REDIRECT_URI", "http://127.0.0.1:8000/api/v1/integrations/oauth/x/callback")
+    config = get_social_oauth_config("x")
+    assert config is not None
+
+    calls = []
+
+    class FakeAsyncClient:
+        def __init__(self, **kwargs):
+            calls.append({"timeout": kwargs.get("timeout"), "follow_redirects": kwargs.get("follow_redirects")})
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def post(self, url, *, data, auth, headers):
+            calls.append({"url": url, "data": dict(data), "auth": auth, "headers": headers})
+            return httpx.Response(200, json={
+                "access_token": "x-refreshed-access",
+                "refresh_token": "x-rotated-refresh",
+                "token_type": "bearer",
+                "expires_in": 7200,
+                "scope": "users.read tweet.read tweet.write offline.access",
+            })
+
+    monkeypatch.setattr(social_oauth.httpx, "AsyncClient", FakeAsyncClient)
+    refreshed = await refresh_provider_access_token(config, "x-old-refresh")
+    request = calls[1]
+    assert request["url"] == "https://api.x.com/2/oauth2/token"
+    assert request["data"] == {"grant_type": "refresh_token", "refresh_token": "x-old-refresh"}
+    assert isinstance(request["auth"], httpx.BasicAuth)
+    assert refreshed.access_token == "x-refreshed-access"
+    assert refreshed.refresh_token == "x-rotated-refresh"
+    assert set(refreshed.scopes) == {"users.read", "tweet.read", "tweet.write", "offline.access"}
+    assert refreshed.expires_at is not None
+    assert refreshed.expires_at > datetime.now(timezone.utc) + timedelta(hours=1)
+
+
+@pytest.mark.asyncio
+async def test_tiktok_refresh_reads_nested_token_response_and_keeps_rotated_token(monkeypatch):
+    import httpx
+    from app.integrations.oauth_social import get_social_oauth_config, refresh_provider_access_token
+    import app.integrations.oauth_social as social_oauth
+
+    monkeypatch.setenv("TIKTOK_CLIENT_KEY", "tiktok-refresh-client")
+    monkeypatch.setenv("TIKTOK_CLIENT_SECRET", "tiktok-refresh-secret")
+    monkeypatch.setenv("TIKTOK_REDIRECT_URI", "http://127.0.0.1:8000/api/v1/integrations/oauth/tiktok/callback")
+    config = get_social_oauth_config("tiktok")
+    assert config is not None
+
+    calls = []
+
+    class FakeAsyncClient:
+        def __init__(self, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def post(self, url, *, data, auth, headers):
+            calls.append({"url": url, "data": dict(data), "auth": auth})
+            return httpx.Response(200, json={
+                "message": "success",
+                "data": {
+                    "access_token": "tiktok-refreshed-access",
+                    "refresh_token": "tiktok-rotated-refresh",
+                    "token_type": "Bearer",
+                    "expires_in": 86400,
+                    "scope": "user.info.basic,video.list",
+                    "error_code": 0,
+                },
+            })
+
+    monkeypatch.setattr(social_oauth.httpx, "AsyncClient", FakeAsyncClient)
+    refreshed = await refresh_provider_access_token(config, "tiktok-old-refresh")
+    assert calls[0]["url"] == "https://open.tiktokapis.com/v2/oauth/token/"
+    assert calls[0]["data"] == {
+        "grant_type": "refresh_token",
+        "refresh_token": "tiktok-old-refresh",
+        "client_key": "tiktok-refresh-client",
+        "client_secret": "tiktok-refresh-secret",
+    }
+    assert refreshed.access_token == "tiktok-refreshed-access"
+    assert refreshed.refresh_token == "tiktok-rotated-refresh"
+    assert set(refreshed.scopes) == {"user.info.basic", "video.list"}
