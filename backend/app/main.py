@@ -1033,8 +1033,9 @@ def integration_status(ctx: AuthContext = Depends(get_context), db: Session = De
                 ["verify_channel", "publish_text"] if provider == "Telegram" else
                 (["verify_business_number", "send_text", "receive_webhooks"] if provider == "WhatsApp" and connected_accounts else
                 (["account_authorization", "read_page_posts", "read_page_videos"] + (["publish_page_text"] if publish_ready_accounts else [])) if provider == "Facebook" else
-                (["account_authorization", "read_profile"] + (["publish_text"] if publish_ready_accounts else [])) if provider in {"X", "LinkedIn"} else
-                (["account_authorization", "read_profile"] if provider in {"TikTok", "YouTube"} else
+                (["account_authorization", "read_profile", "read_posts"] + (["publish_text"] if publish_ready_accounts else [])) if provider == "X" else
+                (["account_authorization", "read_profile"] + (["publish_text"] if publish_ready_accounts else [])) if provider == "LinkedIn" else
+                (["account_authorization", "read_profile", "read_videos"] if provider in {"TikTok", "YouTube"} else
                 list(definition["implemented_capabilities"])))
             ) if implemented else [],
         })
