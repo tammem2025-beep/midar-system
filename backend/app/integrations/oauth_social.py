@@ -6,7 +6,7 @@ permissions from the requested scopes; it stores the scopes returned by the prov
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 import base64
 import os
 import re
@@ -509,3 +509,69 @@ async def fetch_recent_content(
         return items[:bounded_limit]
 
     raise SocialOAuthError("قراءة المحتوى غير منفذة لهذه المنصة في هذا الإصدار.")
+
+
+@dataclass(frozen=True, slots=True)
+class RefreshedProviderToken:
+    access_token: str
+    refresh_token: str | None
+    token_type: str
+    scopes: tuple[str, ...]
+    expires_at: datetime | None
+
+
+async def refresh_provider_access_token(
+    config: SocialOAuthConfig, refresh_token: str,
+) -> RefreshedProviderToken:
+    """Refresh supported OAuth access tokens; callers persist new ciphertext before reuse."""
+    if not isinstance(refresh_token, str) or not refresh_token or len(refresh_token) > 16384:
+        raise SocialOAuthError(f"{config.provider} refresh token is missing or invalid.")
+    data = {"grant_type": "refresh_token", "refresh_token": refresh_token}
+    auth = None
+    if config.provider == "x":
+        # X confidential clients authenticate with HTTP Basic; public-client
+        # integrations use a client_id form value instead.
+        auth = httpx.BasicAuth(config.client_id, config.client_secret)
+    elif config.provider == "tiktok":
+        data.update({"client_key": config.client_id, "client_secret": config.client_secret})
+    else:
+        data.update({"client_id": config.client_id, "client_secret": config.client_secret})
+    try:
+        async with httpx.AsyncClient(timeout=TIMEOUT, follow_redirects=False) as client:
+            response = await client.post(
+                config.token_endpoint, data=data, auth=auth,
+                headers={"Accept": "application/json"},
+            )
+        response_payload = await _json_response(response, provider=config.provider, operation="token refresh")
+    except SocialOAuthError:
+        raise
+    except httpx.HTTPError as exc:
+        raise SocialOAuthError(f"Could not refresh the {config.provider} access token.") from exc
+
+    if config.provider == "tiktok":
+        payload = response_payload.get("data") if isinstance(response_payload.get("data"), dict) else response_payload
+        if response_payload.get("message") not in {None, "success"} or payload.get("error_code") not in {None, 0}:
+            raise SocialOAuthError("TikTok rejected token refresh; reconnect the account if the grant has expired.")
+    else:
+        payload = response_payload
+    access_token = payload.get("access_token")
+    if not isinstance(access_token, str) or not access_token or len(access_token) > 16384:
+        raise SocialOAuthError(f"{config.provider} did not return a usable refreshed access token.")
+
+    seconds = payload.get("expires_in")
+    expires_at = None
+    try:
+        ttl = int(seconds)
+        if 0 < ttl <= 366 * 24 * 60 * 60:
+            expires_at = datetime.now(timezone.utc) + timedelta(seconds=ttl)
+    except (ValueError, TypeError, OverflowError):
+        pass
+    token_scope = _scopes(payload)
+    new_refresh_token = payload.get("refresh_token")
+    return RefreshedProviderToken(
+        access_token=access_token,
+        refresh_token=new_refresh_token if isinstance(new_refresh_token, str) and new_refresh_token else refresh_token,
+        token_type=str(payload.get("token_type") or "Bearer")[:32],
+        scopes=token_scope,
+        expires_at=expires_at,
+    )
