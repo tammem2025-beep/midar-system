@@ -1772,6 +1772,15 @@ def test_whatsapp_signed_webhook_receives_real_message_and_reply_sends_via_cloud
         return {"message_id": "wamid.test.outbound.002", "recipient_id": "15551234567"}
 
     monkeypatch.setattr(main_module, "whatsapp_send_text", fake_send)
+    monkeypatch.setenv("ENABLE_EXTERNAL_PUBLISHING", "false")
+    disabled = client.post(
+        f"/api/v1/conversations/{conversation['id']}/messages",
+        headers=headers, json={"direction": "outbound", "body": "أهلًا بك، كيف نساعدك؟"},
+    )
+    assert disabled.status_code == 423, disabled.text
+    assert send_calls == []
+
+    monkeypatch.setenv("ENABLE_EXTERNAL_PUBLISHING", "true")
     reply = client.post(
         f"/api/v1/conversations/{conversation['id']}/messages",
         headers=headers, json={"direction": "outbound", "body": "أهلًا بك، كيف نساعدك؟"},
