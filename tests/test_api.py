@@ -1795,3 +1795,57 @@ def test_whatsapp_webhook_rejects_missing_or_invalid_signature(client: TestClien
         headers={"Content-Type": "application/json", "X-Hub-Signature-256": "sha256=wrong"},
     )
     assert response.status_code == 401
+
+
+
+def test_social_oauth_configs_build_provider_correct_scopes_and_pkce(monkeypatch):
+    import base64
+    import hashlib
+    from urllib.parse import parse_qs, urlparse
+    from app.integrations.oauth_social import get_social_oauth_config, make_social_authorization_url
+
+    monkeypatch.setenv("X_CLIENT_ID", "x-test-client")
+    monkeypatch.setenv("X_CLIENT_SECRET", "x-test-secret")
+    monkeypatch.setenv("X_REDIRECT_URI", "http://127.0.0.1:8000/api/v1/integrations/oauth/x/callback")
+    x_config = get_social_oauth_config("x")
+    assert x_config is not None and x_config.pkce is True
+    x_url = urlparse(make_social_authorization_url(x_config, "state-x", "test-challenge"))
+    x_query = parse_qs(x_url.query)
+    assert x_url.scheme == "https" and x_url.netloc == "x.com"
+    assert x_query["state"] == ["state-x"]
+    assert x_query["code_challenge"] == ["test-challenge"]
+    assert x_query["code_challenge_method"] == ["S256"]
+    assert set(x_query["scope"][0].split()) == {"users.read", "tweet.read", "tweet.write", "offline.access"}
+
+    monkeypatch.setenv("TIKTOK_CLIENT_KEY", "tiktok-test-client")
+    monkeypatch.setenv("TIKTOK_CLIENT_SECRET", "tiktok-test-secret")
+    monkeypatch.setenv("TIKTOK_REDIRECT_URI", "http://127.0.0.1:8000/api/v1/integrations/oauth/tiktok/callback")
+    tiktok_desktop = get_social_oauth_config("tiktok")
+    assert tiktok_desktop is not None and tiktok_desktop.pkce is True
+    verifier = "a" * 50
+    digest = hashlib.sha256(verifier.encode("ascii")).digest()
+    challenge = base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
+    tiktok_url = urlparse(make_social_authorization_url(tiktok_desktop, "state-tiktok", challenge))
+    tiktok_query = parse_qs(tiktok_url.query)
+    assert tiktok_query["scope"] == ["user.info.basic,video.list"]
+    assert tiktok_query["code_challenge"] == [digest.hex()]
+    assert tiktok_query["code_challenge_method"] == ["S256"]
+
+    monkeypatch.setenv("TIKTOK_REDIRECT_URI", "https://m.example.com/api/v1/integrations/oauth/tiktok/callback")
+    tiktok_web = get_social_oauth_config("tiktok")
+    assert tiktok_web is not None and tiktok_web.pkce is False
+    tiktok_web_url = urlparse(make_social_authorization_url(tiktok_web, "state-web", challenge))
+    tiktok_web_query = parse_qs(tiktok_web_url.query)
+    assert tiktok_web_query["scope"] == ["user.info.basic,video.list"]
+    assert "code_challenge" not in tiktok_web_query
+
+    monkeypatch.setenv("LINKEDIN_CLIENT_ID", "linkedin-test-client")
+    monkeypatch.setenv("LINKEDIN_CLIENT_SECRET", "linkedin-test-secret")
+    monkeypatch.setenv("LINKEDIN_REDIRECT_URI", "http://127.0.0.1:8000/api/v1/integrations/oauth/linkedin/callback")
+    assert get_social_oauth_config("linkedin") is None
+    monkeypatch.setenv("LINKEDIN_REDIRECT_URI", "https://m.example.com/api/v1/integrations/oauth/linkedin/callback")
+    linkedin = get_social_oauth_config("linkedin")
+    assert linkedin is not None and linkedin.pkce is False
+    linkedin_url = urlparse(make_social_authorization_url(linkedin, "state-linkedin", "unused"))
+    assert linkedin_url.netloc == "www.linkedin.com"
+    assert parse_qs(linkedin_url.query)["scope"] == ["openid profile email w_member_social"]
