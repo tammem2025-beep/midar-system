@@ -26,7 +26,7 @@ from sqlalchemy.orm import Session
 from PIL import Image, UnidentifiedImageError
 
 from .db import Base, engine, get_db
-from .models import (AuthFailure, AuditLog, Campaign, Contact, Conversation, ExternalIdentity, OAuthLoginGrant as GoogleLoginGrant, InstallationState, Membership, MediaAsset, Message, OAuthTransaction, Organization, Post, ShortVideoDraft, SocialAccount, Task, User, UserPreference)
+from .models import (AuthFailure, AuditLog, Campaign, Contact, Conversation, ExternalIdentity, IntegrationCredential, OAuthLoginGrant as GoogleLoginGrant, InstallationState, Membership, MediaAsset, Message, OAuthTransaction, Organization, Post, ShortVideoDraft, SocialAccount, Task, User, UserPreference)
 from .schemas import (
     CampaignCreate, CampaignOut, CampaignUpdate, ChangePasswordIn, ContactCreate, ContactOut, ContactUpdate,
     ConversationCreate, ConversationOut, ConversationUpdate, LoginIn, MemberCreate, MemberOut, MemberUpdate,
@@ -41,9 +41,11 @@ from .integrations.google_oidc import GoogleOIDCError, get_google_config, make_a
 from .integrations.authorization import (AuthorizationTransactionError, cleanup_expired_authorization_transactions, create_authorization_transaction, consume_authorization_transaction)
 from .integrations.catalog import PROVIDER_REGISTRY, public_provider_catalog
 from .integrations.registry import get_connector
-from .integrations.meta_graph import (META_SCOPES, MetaGraphError, access_token_for_account, exchange_meta_code, exchange_for_long_lived_token, fetch_account_media, get_meta_config, list_managed_pages, make_meta_authorization_url)
-from .integrations.credential_store import CredentialScopeError, CredentialStoreError, load_provider_credential, store_provider_credential
+from .integrations.meta_graph import (META_SCOPES, MetaDeliveryUnknown, MetaGraphError, access_token_for_account, exchange_meta_code, exchange_for_long_lived_token, fetch_account_media, get_meta_config, list_granted_permissions, list_managed_pages, make_meta_authorization_url, publish_page_text as meta_publish_page_text)
+from .integrations.oauth_social import (SocialDeliveryUnknown, SocialOAuthError, exchange_and_identify, fetch_recent_content as fetch_social_recent_content, get_social_oauth_config, make_social_authorization_url, publish_text as publish_social_text, refresh_provider_access_token)
+from .integrations.credential_store import CredentialScopeError, CredentialStoreError, load_provider_credential, refresh_provider_credential, store_provider_credential
 from .security_tokens import TokenVaultError
+from .integrations.whatsapp_cloud import (WhatsAppCloudError, WhatsAppDeliveryUnknown, get_whatsapp_config, get_webhook_secrets as get_whatsapp_webhook_secrets, verify_webhook_signature, verify_business_number as whatsapp_verify_business_number, send_text as whatsapp_send_text)
 
 API_PREFIX = "/api/v1"
 security_logger = logging.getLogger("midar.security")
@@ -122,7 +124,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="M API",
     description="M API — Manage. Connect. Grow. يتضمن تسجيل Google الاختياري وقراءة محتوى Facebook Pages وحسابات Instagram الاحترافية بعد إعداد OAuth.",
-    version="0.23.1",
+    version="0.24.0",
     lifespan=lifespan,
 )
 
@@ -918,8 +920,15 @@ def integration_status(ctx: AuthContext = Depends(get_context), db: Session = De
         keys = list(definition["required_environment"])
         present = all(bool(os.getenv(key, "").strip()) for key in keys) if keys else False
         meta_provider = provider in {"Facebook", "Instagram"}
-        implemented = (provider == "Telegram" and definition["implementation_status"] in {"partial", "implemented"}) or meta_provider
+        whatsapp_provider = provider == "WhatsApp"
+        oauth_provider_keys = {"X": "x", "LinkedIn": "linkedin", "TikTok": "tiktok", "YouTube": "youtube"}
+        social_oauth_key = oauth_provider_keys.get(provider)
+        implemented = (
+            (provider == "Telegram" and definition["implementation_status"] in {"partial", "implemented"})
+            or meta_provider or whatsapp_provider or social_oauth_key is not None
+        )
         connected_accounts = 0
+        publish_ready_accounts = 0
         if meta_provider:
             connected_accounts = int(db.scalar(select(func.count(SocialAccount.id)).where(
                 SocialAccount.organization_id == ctx.organization.id,
@@ -927,8 +936,79 @@ def integration_status(ctx: AuthContext = Depends(get_context), db: Session = De
                 SocialAccount.connection_status == "connected",
                 SocialAccount.provider_account_id.is_not(None),
             )) or 0)
+            if provider == "Facebook" and connected_accounts:
+                scope_rows = db.scalars(
+                    select(IntegrationCredential.scopes_json)
+                    .join(SocialAccount, SocialAccount.id == IntegrationCredential.social_account_id)
+                    .where(
+                        IntegrationCredential.organization_id == ctx.organization.id,
+                        IntegrationCredential.provider == "Facebook",
+                        IntegrationCredential.status == "active",
+                        SocialAccount.platform == "Facebook",
+                        SocialAccount.connection_status == "connected",
+                        SocialAccount.provider_account_id.is_not(None),
+                    )
+                ).all()
+                for scopes_json in scope_rows:
+                    try:
+                        scopes = json.loads(scopes_json)
+                    except (TypeError, ValueError, json.JSONDecodeError):
+                        scopes = []
+                    if isinstance(scopes, list) and "pages_manage_posts" in scopes:
+                        publish_ready_accounts += 1
             config_ready = bool(get_meta_config())
-            state = "connected_read_only" if connected_accounts else ("authorization_required" if config_ready else "not_configured")
+            state = (
+                "connected_read_write" if provider == "Facebook" and publish_ready_accounts else
+                "connected_read_only" if connected_accounts else
+                ("authorization_required" if config_ready else "not_configured")
+            )
+        elif whatsapp_provider:
+            connected_accounts = int(db.scalar(select(func.count(SocialAccount.id)).where(
+                SocialAccount.organization_id == ctx.organization.id,
+                SocialAccount.platform == "WhatsApp",
+                SocialAccount.connection_status == "connected",
+                SocialAccount.provider_account_id.is_not(None),
+            )) or 0)
+            config_ready = bool(get_whatsapp_config())
+            webhook_ready = bool(get_whatsapp_webhook_secrets())
+            state = (
+                "connected" if connected_accounts and webhook_ready and config_ready else
+                "connected_webhook_pending" if connected_accounts and config_ready else
+                "connected_configuration_missing" if connected_accounts else
+                "verification_required" if config_ready else "not_configured"
+            )
+        elif social_oauth_key:
+            connected_accounts = int(db.scalar(select(func.count(SocialAccount.id)).where(
+                SocialAccount.organization_id == ctx.organization.id,
+                SocialAccount.platform == provider,
+                SocialAccount.connection_status == "connected",
+                SocialAccount.provider_account_id.is_not(None),
+            )) or 0)
+            config_ready = bool(get_social_oauth_config(social_oauth_key))
+            if connected_accounts:
+                scope_rows = db.scalars(
+                    select(IntegrationCredential.scopes_json)
+                    .join(SocialAccount, SocialAccount.id == IntegrationCredential.social_account_id)
+                    .where(
+                        IntegrationCredential.organization_id == ctx.organization.id,
+                        IntegrationCredential.provider == provider,
+                        IntegrationCredential.status == "active",
+                        SocialAccount.platform == provider,
+                        SocialAccount.connection_status == "connected",
+                    )
+                ).all()
+                write_scope = {"X": "tweet.write", "LinkedIn": "w_member_social"}.get(provider)
+                if write_scope:
+                    for raw_scopes in scope_rows:
+                        try:
+                            granted = json.loads(raw_scopes)
+                        except (TypeError, ValueError, json.JSONDecodeError):
+                            granted = []
+                        if isinstance(granted, list) and write_scope in granted:
+                            publish_ready_accounts += 1
+            state = "connected_read_write" if publish_ready_accounts else (
+                "connected" if connected_accounts else "authorization_required" if config_ready else "not_configured"
+            )
         elif implemented:
             state = "configured_channel_verification_required" if present else "not_configured"
         else:
@@ -946,8 +1026,18 @@ def integration_status(ctx: AuthContext = Depends(get_context), db: Session = De
             "description": definition["description_ar"],
             "implemented_capabilities": list(definition["implemented_capabilities"]),
             "planned_capabilities": list(definition["planned_capabilities"]),
-            "connected_accounts": connected_accounts if meta_provider else 0,
-            "supported_actions": (["verify_channel", "publish_text"] if provider == "Telegram" else list(definition["implemented_capabilities"])) if implemented else [],
+            "connected_accounts": connected_accounts if (meta_provider or whatsapp_provider or social_oauth_key) else 0,
+            "webhook_ready": bool(get_whatsapp_webhook_secrets()) if whatsapp_provider else None,
+            "publish_ready_accounts": publish_ready_accounts if (provider == "Facebook" or social_oauth_key) else 0,
+            "supported_actions": (
+                ["verify_channel", "publish_text"] if provider == "Telegram" else
+                (["verify_business_number", "send_text", "receive_webhooks"] if provider == "WhatsApp" and connected_accounts else
+                (["account_authorization", "read_page_posts", "read_page_videos"] + (["publish_page_text"] if publish_ready_accounts else [])) if provider == "Facebook" else
+                (["account_authorization", "read_profile", "read_posts"] + (["publish_text"] if publish_ready_accounts else [])) if provider == "X" else
+                (["account_authorization", "read_profile"] + (["publish_text"] if publish_ready_accounts else [])) if provider == "LinkedIn" else
+                (["account_authorization", "read_profile", "read_videos"] if provider in {"TikTok", "YouTube"} else
+                list(definition["implemented_capabilities"])))
+            ) if implemented else [],
         })
 
     telegram_token_present = bool(os.getenv("TELEGRAM_BOT_TOKEN", "").strip())
@@ -967,7 +1057,24 @@ def integration_status(ctx: AuthContext = Depends(get_context), db: Session = De
                 "publishing_disabled" if telegram_destination_ready and not external_publishing_enabled else
                 "configured_channel_verification_required" if telegram_token_present else "not_configured"
             )
-    ready = bool(telegram_destination_ready and external_publishing_enabled)
+    facebook_destination_ready = any(
+        item["platform"] == "Facebook" and int(item.get("publish_ready_accounts", 0)) > 0
+        for item in providers
+    )
+    oauth_text_destination_ready = any(
+        item["platform"] in {"X", "LinkedIn"} and int(item.get("publish_ready_accounts", 0)) > 0
+        for item in providers
+    )
+    whatsapp_accounts_ready = bool(get_whatsapp_config()) and any(
+        item["platform"] == "WhatsApp"
+        and item.get("status") == "connected"
+        and int(item.get("connected_accounts", 0)) > 0
+        for item in providers
+    )
+    ready = bool(external_publishing_enabled and (
+        telegram_destination_ready or facebook_destination_ready
+        or oauth_text_destination_ready or whatsapp_accounts_ready
+    ))
     return {
         "providers": providers,
         "external_actions_enabled": ready,
@@ -976,7 +1083,7 @@ def integration_status(ctx: AuthContext = Depends(get_context), db: Session = De
         "note": (
             "النشر الخارجي متوقف افتراضيًا كإجراء أمان. وظائف إنشاء المحتوى وإدارته محليًا متاحة، ولن يتم إرسال أي منشور إلى منصة خارجية حتى تفعيل ENABLE_EXTERNAL_PUBLISHING صراحةً بعد مراجعة الجاهزية."
             if not external_publishing_enabled else
-            "النشر الخارجي مفعّل في إعدادات الخادم؛ لا يصبح Telegram جاهزًا إلا بوجود رمز البوت ووجهة متحقق منها. بقية المنصات تحتاج موصلات منفذة وموافقات مستقلة."
+            "النشر الخارجي مفعّل في إعدادات الخادم؛ يمكن نشر نص إلى صفحات Facebook التي منحت pages_manage_posts، أو إلى وجهات Telegram المتحقق منها، أو النشر النصي إلى X وLinkedIn عند منح الصلاحيات، أو إرسال ردود WhatsApp Business النصية للحساب المتحقق منه. بقية وظائف المنصات تحتاج موصلات وموافقات مستقلة."
         ),
     }
 
@@ -1336,79 +1443,108 @@ def delete_post(post_id: str, ctx: AuthContext = Depends(get_context), db: Sessi
 async def publish_post(post_id: str, ctx: AuthContext = Depends(get_context), db: Session = Depends(get_db)):
     require_write(ctx, "posts")
     if not env_flag("ENABLE_EXTERNAL_PUBLISHING", default=False):
-        raise HTTPException(
-            status_code=423,
-            detail="النشر الخارجي متوقف افتراضيًا في هذه المرحلة. لم يتم إرسال أي محتوى. لا تفعّل ENABLE_EXTERNAL_PUBLISHING=true إلا بعد مراجعة الإعدادات وإقرار بدء الاختبار الخارجي.",
-        )
+        raise HTTPException(status_code=423, detail="النشر الخارجي متوقف افتراضيًا. لم يتم إرسال أي محتوى؛ راجع إعدادات الخادم قبل تفعيله.")
     post = db.scalar(select(Post).where(Post.id == post_id, Post.organization_id == ctx.organization.id))
-    if not post: not_found("المنشور")
-    if post.platform != "Telegram":
-        raise HTTPException(status_code=501, detail="النشر الخارجي متاح حاليًا لقنوات Telegram النصية فقط")
-    token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
-    if not token:
-        raise HTTPException(status_code=503, detail="موصل Telegram غير مهيأ على الخادم")
+    if not post:
+        not_found("المنشور")
+    supported_platforms = {"Telegram", "Facebook", "X", "LinkedIn"}
+    if post.platform not in supported_platforms:
+        raise HTTPException(status_code=501, detail="النشر الخارجي النصي متاح حاليًا لصفحات Facebook وX وLinkedIn وقنوات Telegram فقط")
     if post.status in {"published", "publishing", "delivery_unknown"}:
-        raise HTTPException(status_code=409, detail="حالة المنشور لا تسمح بإعادة الإرسال؛ تحقق من القناة قبل أي محاولة جديدة")
+        raise HTTPException(status_code=409, detail="حالة المنشور لا تسمح بإعادة الإرسال؛ تحقق من الوجهة قبل أي محاولة جديدة")
     if post.status not in {"draft", "scheduled", "approved", "failed"}:
         raise HTTPException(status_code=409, detail="لا يمكن نشر هذا المنشور من حالته الحالية")
     if not post.social_account_id:
-        raise HTTPException(status_code=422, detail="اختر قناة Telegram للمنشور أولًا")
-    account = db.scalar(select(SocialAccount).where(SocialAccount.id == post.social_account_id,
-            SocialAccount.organization_id == ctx.organization.id, SocialAccount.platform == "Telegram"))
+        raise HTTPException(status_code=422, detail="اختر حسابًا اجتماعيًا للمنشور أولًا")
+    account = db.scalar(select(SocialAccount).where(
+        SocialAccount.id == post.social_account_id,
+        SocialAccount.organization_id == ctx.organization.id,
+        SocialAccount.platform == post.platform,
+    ))
     if not account or account.connection_status != "connected" or not account.provider_account_id:
-        raise HTTPException(status_code=409, detail="تحقق من قناة Telegram أولًا من شاشة الحسابات الاجتماعية")
+        raise HTTPException(status_code=409, detail="تحقق من الحساب الاجتماعي أولًا من شاشة الحسابات")
+
+    telegram_token = ""
+    meta_config = None
+    credential = None
+    required_scope = {"Facebook": "pages_manage_posts", "X": "tweet.write", "LinkedIn": "w_member_social"}.get(post.platform)
+    if post.platform == "Telegram":
+        telegram_token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+        if not telegram_token:
+            raise HTTPException(status_code=503, detail="موصل Telegram غير مهيأ على الخادم")
+    else:
+        if post.platform == "Facebook":
+            meta_config = get_meta_config()
+            if not meta_config:
+                raise HTTPException(status_code=503, detail="إعداد Meta غير مكتمل على الخادم")
+        if post.platform in {"X", "LinkedIn"}:
+            credential = await _load_social_credential_with_refresh(
+                db, ctx, account, {"X": "x", "LinkedIn": "linkedin"}[post.platform],
+            )
+        else:
+            try:
+                credential = load_provider_credential(
+                    db, organization_id=ctx.organization.id, social_account_id=account.id,
+                )
+            except (CredentialStoreError, CredentialScopeError, TokenVaultError) as exc:
+                raise HTTPException(status_code=409, detail="تعذر فتح بيانات اعتماد الحساب بأمان؛ أعد ربط المنصة.") from exc
+            if credential is None:
+                raise HTTPException(status_code=409, detail="لا توجد بيانات اعتماد مشفرة لهذا الحساب؛ أعد ربط المنصة.")
+        if required_scope and required_scope not in credential.scopes:
+            raise HTTPException(status_code=409, detail=f"لم يمنح الحساب صلاحية {required_scope}. أعد التفويض مع الموافقة على الصلاحية المطلوبة.")
+
     text_body = (post.content or "").strip() or post.title.strip()
     if not text_body:
         raise HTTPException(status_code=422, detail="أضف نصًا للمنشور قبل النشر")
-    if len(text_body) > 4096:
-        raise HTTPException(status_code=422, detail="حد نص منشور Telegram هو 4096 حرفًا؛ اختصر المحتوى قبل النشر")
+    max_chars = 4096 if post.platform == "Telegram" else 280 if post.platform == "X" else 3000 if post.platform == "LinkedIn" else 60000
+    if len(text_body) > max_chars:
+        raise HTTPException(status_code=422, detail=f"يتجاوز النص الحد المسموح لهذه المنصة وهو {max_chars} حرفًا")
 
-    # Atomically reserve the delivery attempt. A concurrent request cannot submit
-    # the same post twice; ambiguous network outcomes are never auto-retried.
-    result = db.execute(update(Post).where(Post.id == post.id, Post.organization_id == ctx.organization.id,
-            Post.status.in_(["draft", "scheduled", "approved", "failed"]))
-            .values(status="publishing", publish_error=None, updated_at=utcnow()))
+    result = db.execute(update(Post).where(
+        Post.id == post.id, Post.organization_id == ctx.organization.id,
+        Post.status.in_(["draft", "scheduled", "approved", "failed"]),
+    ).values(status="publishing", publish_error=None, updated_at=utcnow()))
     if result.rowcount != 1:
         db.rollback()
         raise HTTPException(status_code=409, detail="بدأت محاولة نشر أخرى لهذا المنشور؛ حدّث الصفحة وتحقق من حالته")
     db.commit()
     post = db.scalar(select(Post).where(Post.id == post_id, Post.organization_id == ctx.organization.id))
-    connector = get_connector(
-        account.platform,
-        telegram_verify_fn=telegram_verify_channel,
-        telegram_publish_fn=telegram_send_text,
-    )
-    if connector is None or not connector.capabilities.publish_text:
-        post.status = "failed"
-        post.publish_error = "لا يوجد موصل نشر نصي فعّال لهذه المنصة."
-        post.updated_at = utcnow()
-        db.commit()
-        raise HTTPException(status_code=501, detail=post.publish_error)
+
     try:
-        delivery = await connector.publish_text(token, account.provider_account_id, text_body)
-    except TelegramDeliveryUnknown as exc:
+        if post.platform == "Telegram":
+            connector = get_connector(account.platform, telegram_verify_fn=telegram_verify_channel, telegram_publish_fn=telegram_send_text)
+            if connector is None or not connector.capabilities.publish_text:
+                raise TelegramAPIError("لا يوجد موصل نشر نصي فعّال لقناة Telegram.")
+            delivery = await connector.publish_text(telegram_token, account.provider_account_id, text_body)
+        elif post.platform == "Facebook":
+            delivery = await meta_publish_page_text(meta_config, account.provider_account_id, credential.access_token, text_body)
+        else:
+            delivery = await publish_social_text(post.platform.casefold(), credential.access_token, account.provider_account_id, text_body)
+    except (TelegramDeliveryUnknown, MetaDeliveryUnknown, SocialDeliveryUnknown) as exc:
         post.status = "delivery_unknown"
-        post.publish_error = "تعذر تأكيد نتيجة الطلب. افحص القناة في Telegram قبل أي إعادة محاولة."
+        post.publish_error = "تعذر تأكيد نتيجة الطلب. افحص الحساب الخارجي قبل أي إعادة محاولة."
         post.updated_at = utcnow()
-        audit(db, ctx, "telegram.publish_outcome_unknown", "post", post.id, {"account_id": account.id})
+        audit(db, ctx, f"{post.platform.lower()}.publish_outcome_unknown", "post", post.id, {"account_id": account.id})
         db.commit()
         raise HTTPException(status_code=502, detail=post.publish_error) from exc
-    except TelegramAPIError as exc:
+    except (TelegramAPIError, MetaGraphError, SocialOAuthError) as exc:
         post.status = "failed"
         post.publish_error = str(exc)[:1000]
         post.updated_at = utcnow()
-        audit(db, ctx, "telegram.publish_failed", "post", post.id, {"account_id": account.id, "error_code": exc.error_code})
+        audit(db, ctx, f"{post.platform.lower()}.publish_failed", "post", post.id, {"account_id": account.id})
         db.commit()
-        raise HTTPException(status_code=502, detail=f"رفض Telegram نشر الرسالة: {str(exc)[:300]}") from exc
+        raise HTTPException(status_code=502, detail=f"رفضت المنصة نشر الرسالة: {str(exc)[:300]}") from exc
 
     post.status = "published"
     post.published_at = utcnow()
-    post.provider_post_id = str(delivery.get("message_id")) if delivery.get("message_id") is not None else None
+    provider_post_id = delivery.get("message_id") or delivery.get("id") or delivery.get("post_id")
+    post.provider_post_id = str(provider_post_id) if provider_post_id is not None else None
     post.publish_error = None
     post.updated_at = utcnow()
     account.last_synced_at = utcnow()
-    audit(db, ctx, "telegram.published", "post", post.id, {"account_id": account.id, "provider_post_id": post.provider_post_id})
-    db.commit(); db.refresh(post)
+    audit(db, ctx, f"{post.platform.lower()}.published", "post", post.id, {"account_id": account.id, "provider_post_id": post.provider_post_id})
+    db.commit()
+    db.refresh(post)
     return post
 
 
@@ -1503,6 +1639,269 @@ def delete_task(task_id: str, ctx: AuthContext = Depends(get_context), db: Sessi
 
 
 
+def _social_oauth_cookie_name(provider: str, state: str) -> str:
+    digest = hashlib.sha256(f"{provider}:{state}".encode("utf-8")).hexdigest()[:24]
+    return f"m_oauth_{provider}_bind_{digest}"
+
+
+def _social_oauth_redirect(result: str, provider: str) -> RedirectResponse:
+    allowed = {"connected", "access_denied", "invalid_state", "not_configured", "connection_failed"}
+    code = result if result in allowed else "connection_failed"
+    response = RedirectResponse(url=f"/?provider_result={code}&provider={provider}", status_code=303)
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return response
+
+
+def _upsert_oauth_social_account(db: Session, ctx: AuthContext, identity) -> SocialAccount:
+    platform = {"x": "X", "linkedin": "LinkedIn", "tiktok": "TikTok", "youtube": "YouTube"}[identity.provider]
+    account = db.scalar(select(SocialAccount).where(
+        SocialAccount.organization_id == ctx.organization.id,
+        SocialAccount.platform == platform,
+        SocialAccount.provider_account_id == identity.external_id,
+    ))
+    handle = (identity.handle or f"{identity.provider}:{identity.external_id}")[:180]
+    collision = db.scalar(select(SocialAccount).where(
+        SocialAccount.organization_id == ctx.organization.id,
+        SocialAccount.platform == platform, SocialAccount.handle == handle,
+    ))
+    if collision is not None and (account is None or collision.id != account.id):
+        handle = f"{identity.provider}:{identity.external_id}"[:180]
+        collision = db.scalar(select(SocialAccount).where(
+            SocialAccount.organization_id == ctx.organization.id,
+            SocialAccount.platform == platform, SocialAccount.handle == handle,
+        ))
+        if collision is not None and (account is None or collision.id != account.id):
+            handle = None
+    if account is None:
+        account = SocialAccount(
+            organization_id=ctx.organization.id, platform=platform,
+            account_name=identity.account_name[:160], handle=handle,
+            connection_status="connected", provider_account_id=identity.external_id,
+            last_synced_at=utcnow(),
+        )
+        db.add(account)
+    else:
+        account.account_name = identity.account_name[:160]
+        account.handle = handle
+        account.connection_status = "connected"
+        account.provider_account_id = identity.external_id
+        account.last_synced_at = utcnow()
+    db.flush()
+    store_provider_credential(
+        db, organization_id=ctx.organization.id, social_account_id=account.id,
+        actor_user_id=ctx.user.id, provider=platform, access_token=identity.access_token,
+        refresh_token=identity.refresh_token, token_type=identity.token_type,
+        scopes=identity.scopes, expires_at=identity.expires_at,
+    )
+    return account
+
+
+async def _load_social_credential_with_refresh(
+    db: Session, ctx: AuthContext, account: SocialAccount, provider: str,
+):
+    """Load encrypted credentials and refresh near-expiry OAuth tokens before API use."""
+    try:
+        credential = load_provider_credential(
+            db, organization_id=ctx.organization.id, social_account_id=account.id,
+        )
+    except (CredentialStoreError, CredentialScopeError, TokenVaultError) as exc:
+        raise HTTPException(status_code=409, detail="تعذر فتح اعتماد الحساب بأمان؛ أعد ربط المنصة.") from exc
+    if credential is None:
+        raise HTTPException(status_code=409, detail="لا توجد بيانات اعتماد مشفرة لهذا الحساب؛ أعد ربط المنصة.")
+
+    expiry = credential.expires_at
+    if expiry is None:
+        return credential
+    if expiry.tzinfo is None:
+        expiry = expiry.replace(tzinfo=timezone.utc)
+    else:
+        expiry = expiry.astimezone(timezone.utc)
+    if expiry > datetime.now(timezone.utc) + timedelta(minutes=5):
+        return credential
+    if not credential.refresh_token:
+        raise HTTPException(status_code=409, detail="انتهت صلاحية رمز الوصول ولا يوجد رمز تجديد. أعد ربط الحساب من الإعدادات.")
+
+    config = get_social_oauth_config(provider)
+    if config is None:
+        raise HTTPException(status_code=503, detail=f"إعداد OAuth الخاص بـ {provider} غير مكتمل؛ لا يمكن تجديد الجلسة.")
+    # Release the read-only database transaction before provider network I/O.
+    db.commit()
+    try:
+        refreshed = await refresh_provider_access_token(config, credential.refresh_token)
+        refresh_provider_credential(
+            db, organization_id=ctx.organization.id, social_account_id=account.id,
+            actor_user_id=ctx.user.id, access_token=refreshed.access_token,
+            refresh_token=refreshed.refresh_token, token_type=refreshed.token_type,
+            scopes=refreshed.scopes or credential.scopes, expires_at=refreshed.expires_at,
+        )
+        db.commit()
+    except (SocialOAuthError, CredentialStoreError, CredentialScopeError, TokenVaultError, IntegrityError) as exc:
+        db.rollback()
+        security_logger.warning(
+            "social_oauth_refresh_failed provider=%s organization_id=%s",
+            provider, ctx.organization.id,
+        )
+        raise HTTPException(status_code=409, detail="تعذر تجديد جلسة المنصة؛ أعد ربط الحساب وتحقق من صلاحيات تطبيق المطوّر.") from exc
+
+    try:
+        credential = load_provider_credential(
+            db, organization_id=ctx.organization.id, social_account_id=account.id,
+        )
+    except (CredentialStoreError, CredentialScopeError, TokenVaultError) as exc:
+        raise HTTPException(status_code=409, detail="تعذر تحميل الاعتماد المجدد؛ أعد ربط الحساب.") from exc
+    if credential is None:
+        raise HTTPException(status_code=409, detail="لم يتم حفظ الاعتماد المجدد؛ أعد ربط الحساب.")
+    return credential
+
+
+@app.post(f"{API_PREFIX}/integrations/oauth/{{provider}}/connect-url")
+def social_oauth_connect_url(
+    provider: str, request: Request, ctx: AuthContext = Depends(get_context), db: Session = Depends(get_db),
+):
+    require_roles(ctx, {"owner", "admin"})
+    provider = (provider or "").casefold()
+    if provider not in {"x", "linkedin", "tiktok", "youtube"}:
+        raise HTTPException(status_code=404, detail="موصل OAuth غير معروف.")
+    config = get_social_oauth_config(provider)
+    if config is None:
+        raise HTTPException(status_code=503, detail=f"إعداد OAuth الخاص بـ {provider} غير مكتمل في إعدادات M على الخادم.")
+    cleanup_expired_authorization_transactions(db)
+    try:
+        challenge = create_authorization_transaction(
+            db, provider=provider, purpose="connect", user_id=ctx.user.id,
+            organization_id=ctx.organization.id, auth_version=int(ctx.user.auth_version or 0),
+            ttl_seconds=600,
+        )
+        db.commit()
+    except AuthorizationTransactionError as exc:
+        db.rollback()
+        raise HTTPException(status_code=403, detail="لا يمكن بدء ربط هذه المنصة لهذا المستخدم أو مساحة العمل.") from exc
+    response = JSONResponse({
+        "provider": provider,
+        "authorization_url": make_social_authorization_url(config, challenge.state, challenge.code_challenge),
+    })
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.set_cookie(
+        key=_social_oauth_cookie_name(provider, challenge.state), value=challenge.browser_binding,
+        max_age=600, path=f"{API_PREFIX}/integrations/oauth/{provider}/callback",
+        secure=_google_cookie_secure(request), httponly=True, samesite="lax",
+    )
+    return response
+
+
+@app.get(f"{API_PREFIX}/integrations/oauth/{{provider}}/callback")
+async def social_oauth_callback(
+    provider: str, request: Request, code: str | None = None, state: str | None = None,
+    error: str | None = None, scopes: str | None = None, scope: str | None = None,
+    db: Session = Depends(get_db),
+):
+    provider = (provider or "").casefold()
+    if provider not in {"x", "linkedin", "tiktok", "youtube"}:
+        return _social_oauth_redirect("not_configured", "unknown")
+    if not state or len(state) > 256:
+        return _social_oauth_redirect("invalid_state", provider)
+    state_hash = hashlib.sha256(state.encode("utf-8")).hexdigest()
+    stored = db.get(OAuthTransaction, state_hash)
+    cookie_name = _social_oauth_cookie_name(provider, state)
+    secure_cookie = _google_cookie_secure(request)
+    if not stored or stored.provider != provider or stored.purpose != "connect":
+        return _social_oauth_redirect("invalid_state", provider)
+    try:
+        consumed = consume_authorization_transaction(
+            db, provider=provider, purpose="connect", state=state,
+            browser_binding=request.cookies.get(cookie_name, ""),
+        )
+        db.commit()
+    except AuthorizationTransactionError as exc:
+        if exc.cleanup_performed:
+            db.commit()
+        else:
+            db.rollback()
+        return _social_oauth_redirect("invalid_state", provider)
+
+    def finish(result: str) -> RedirectResponse:
+        response = _social_oauth_redirect(result, provider)
+        response.delete_cookie(
+            key=cookie_name, path=f"{API_PREFIX}/integrations/oauth/{provider}/callback",
+            secure=secure_cookie, httponly=True, samesite="lax",
+        )
+        return response
+
+    if error:
+        return finish("access_denied")
+    if not code or len(code) > 4096:
+        return finish("invalid_state")
+    config = get_social_oauth_config(provider)
+    actor = db.get(User, consumed.user_id) if consumed.user_id else None
+    organization = db.get(Organization, consumed.organization_id) if consumed.organization_id else None
+    membership = db.scalar(select(Membership).where(
+        Membership.user_id == consumed.user_id, Membership.organization_id == consumed.organization_id,
+    )) if consumed.user_id and consumed.organization_id else None
+    if config is None or not os.getenv("PROVIDER_TOKEN_ENCRYPTION_KEY", "").strip():
+        return finish("not_configured")
+    if not actor or not actor.is_active or not organization or membership is None or membership.role not in {"owner", "admin"}:
+        return finish("invalid_state")
+    ctx = AuthContext(actor, membership, organization)
+    try:
+        # Persist scopes reported by the provider's token response. Do not trust
+        # editable callback query parameters as proof that a permission was granted.
+        identity = await exchange_and_identify(
+            config, code=code, code_verifier=consumed.code_verifier,
+        )
+        _upsert_oauth_social_account(db, ctx, identity)
+        audit(db, ctx, f"integration.{provider}_connected", "provider", None, {
+            "account_id": identity.external_id, "scope_count": len(identity.scopes),
+        })
+        db.commit()
+        return finish("connected")
+    except (SocialOAuthError, CredentialStoreError, CredentialScopeError, TokenVaultError, IntegrityError):
+        db.rollback()
+        security_logger.warning("social_oauth_connection_failed provider=%s organization_id=%s", provider, organization.id)
+        return finish("connection_failed")
+    except Exception:
+        db.rollback()
+        security_logger.exception("social_oauth_connection_unexpected_failure provider=%s organization_id=%s", provider, organization.id)
+        return finish("connection_failed")
+
+
+@app.get(f"{API_PREFIX}/integrations/oauth/{{provider}}/accounts/{{account_id}}/media")
+async def social_oauth_account_media(
+    provider: str, account_id: str, limit: int = Query(30, ge=1, le=50),
+    ctx: AuthContext = Depends(get_context), db: Session = Depends(get_db),
+):
+    require_read(ctx, "accounts")
+    provider = (provider or "").casefold()
+    platforms = {"x": "X", "tiktok": "TikTok", "youtube": "YouTube"}
+    if provider not in platforms:
+        raise HTTPException(status_code=404, detail="قراءة المحتوى غير متاحة لهذا المزوّد حاليًا.")
+    account = db.scalar(select(SocialAccount).where(
+        SocialAccount.id == account_id,
+        SocialAccount.organization_id == ctx.organization.id,
+        SocialAccount.platform == platforms[provider],
+        SocialAccount.connection_status == "connected",
+        SocialAccount.provider_account_id.is_not(None),
+    ))
+    if account is None:
+        raise HTTPException(status_code=404, detail="الحساب غير متصل أو غير موجود ضمن مساحة العمل الحالية.")
+    credential = await _load_social_credential_with_refresh(db, ctx, account, provider)
+    try:
+        items = await fetch_social_recent_content(
+            provider, credential.access_token, account.provider_account_id,
+            scopes=credential.scopes, limit=limit,
+        )
+    except SocialOAuthError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)[:400]) from exc
+    account.last_synced_at = utcnow()
+    audit(db, ctx, f"integration.{provider}_media_read", "social_account", account.id, {"count": len(items)})
+    db.commit()
+    return {
+        "account": {"id": account.id, "platform": account.platform, "account_name": account.account_name, "handle": account.handle},
+        "source": f"{provider}_official_api", "items": items, "fetched_at": utcnow(),
+    }
+
+
 def _meta_binding_cookie_name(state: str) -> str:
     digest = hashlib.sha256(state.encode("utf-8")).hexdigest()[:24]
     return f"m_oauth_meta_bind_{digest}"
@@ -1561,6 +1960,188 @@ def _upsert_meta_social_account(
         scopes=scopes, expires_at=None,
     )
     return account
+
+
+
+@app.post(f"{API_PREFIX}/integrations/whatsapp/verify")
+async def verify_whatsapp_business_number(ctx: AuthContext = Depends(get_context), db: Session = Depends(get_db)):
+    require_roles(ctx, {"owner", "admin"})
+    config = get_whatsapp_config()
+    if config is None:
+        raise HTTPException(status_code=503, detail="أضف WHATSAPP_PHONE_NUMBER_ID وWHATSAPP_ACCESS_TOKEN إلى إعدادات الخادم ثم أعد تشغيل M.")
+    if not os.getenv("PROVIDER_TOKEN_ENCRYPTION_KEY", "").strip():
+        raise HTTPException(status_code=503, detail="خزنة رموز المنصات غير مهيأة؛ أعد تشغيل M لتوليد مفتاح التشفير.")
+    try:
+        remote = await whatsapp_verify_business_number(config)
+    except WhatsAppCloudError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)[:350]) from exc
+    phone_id = str(remote["id"])
+    foreign = db.scalar(select(SocialAccount).where(
+        SocialAccount.platform == "WhatsApp",
+        SocialAccount.provider_account_id == phone_id,
+        SocialAccount.organization_id != ctx.organization.id,
+        SocialAccount.connection_status == "connected",
+    ))
+    if foreign is not None:
+        raise HTTPException(status_code=409, detail="رقم WhatsApp Business هذا مرتبط بمساحة عمل أخرى داخل هذا الخادم.")
+    display_number = str(remote.get("display_phone_number") or "").strip()
+    verified_name = str(remote.get("verified_name") or "").strip()
+    account = _upsert_meta_social_account(
+        db, ctx, platform="WhatsApp", external_id=phone_id,
+        account_name=(verified_name or display_number or "WhatsApp Business"),
+        handle=(display_number or f"wa:{phone_id}"),
+        access_token=config["access_token"], scopes=(),
+    )
+    account.last_synced_at = utcnow()
+    audit(db, ctx, "integration.whatsapp_business_verified", "social_account", account.id, {
+        "phone_number_id": phone_id, "has_display_number": bool(display_number),
+        "has_verified_name": bool(verified_name),
+    })
+    db.commit()
+    db.refresh(account)
+    return {
+        "verified": True,
+        "account": {
+            "id": account.id, "platform": account.platform, "account_name": account.account_name,
+            "handle": account.handle, "connection_status": account.connection_status,
+            "provider_account_id": account.provider_account_id,
+        },
+        "business": remote,
+        "webhook_ready": bool(get_whatsapp_webhook_secrets()),
+    }
+
+
+@app.get(f"{API_PREFIX}/webhooks/whatsapp")
+def verify_whatsapp_webhook(
+    mode: str | None = Query(default=None, alias="hub.mode"),
+    verify_token: str | None = Query(default=None, alias="hub.verify_token"),
+    challenge: str | None = Query(default=None, alias="hub.challenge"),
+):
+    webhook_secrets = get_whatsapp_webhook_secrets()
+    if not webhook_secrets:
+        raise HTTPException(status_code=503, detail="WhatsApp webhook secrets are not configured.")
+    expected_token, _ = webhook_secrets
+    if mode != "subscribe" or not verify_token or not secrets.compare_digest(verify_token, expected_token) or challenge is None:
+        raise HTTPException(status_code=403, detail="WhatsApp webhook verification was rejected.")
+    return Response(content=challenge, media_type="text/plain")
+
+
+@app.post(f"{API_PREFIX}/webhooks/whatsapp")
+async def receive_whatsapp_webhook(request: Request, db: Session = Depends(get_db)):
+    webhook_secrets = get_whatsapp_webhook_secrets()
+    if not webhook_secrets:
+        raise HTTPException(status_code=503, detail="WhatsApp webhook secrets are not configured.")
+    _, app_secret = webhook_secrets
+    size = request.headers.get("content-length", "")
+    if size.isdigit() and int(size) > 2 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Webhook payload exceeds the allowed size.")
+    raw_body = await request.body()
+    if not verify_webhook_signature(raw_body, request.headers.get("x-hub-signature-256", ""), app_secret):
+        raise HTTPException(status_code=401, detail="Invalid WhatsApp webhook signature.")
+    try:
+        event = json.loads(raw_body.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError):
+        raise HTTPException(status_code=400, detail="Webhook JSON is invalid.")
+    if not isinstance(event, dict) or event.get("object") != "whatsapp_business_account":
+        raise HTTPException(status_code=400, detail="Unexpected webhook event object.")
+
+    stored_messages = 0
+    entries = event.get("entry") if isinstance(event.get("entry"), list) else []
+    for entry in entries:
+        changes = entry.get("changes", []) if isinstance(entry, dict) else []
+        for change in changes if isinstance(changes, list) else []:
+            if not isinstance(change, dict) or change.get("field") != "messages":
+                continue
+            value = change.get("value") if isinstance(change.get("value"), dict) else {}
+            metadata = value.get("metadata") if isinstance(value.get("metadata"), dict) else {}
+            phone_id = str(metadata.get("phone_number_id") or "")
+            account = db.scalar(select(SocialAccount).where(
+                SocialAccount.platform == "WhatsApp",
+                SocialAccount.provider_account_id == phone_id,
+                SocialAccount.connection_status == "connected",
+            ))
+            if account is None:
+                continue
+            org_id = account.organization_id
+            names_by_phone = {}
+            for profile in value.get("contacts", []) if isinstance(value.get("contacts"), list) else []:
+                if isinstance(profile, dict):
+                    wa_id = str(profile.get("wa_id") or "")
+                    name = profile.get("profile", {}).get("name", "") if isinstance(profile.get("profile"), dict) else ""
+                    if wa_id:
+                        names_by_phone[wa_id] = str(name or "").strip()
+            for incoming in value.get("messages", []) if isinstance(value.get("messages"), list) else []:
+                if not isinstance(incoming, dict):
+                    continue
+                message_id = str(incoming.get("id") or "")
+                sender = str(incoming.get("from") or "")
+                if not message_id or not re.fullmatch(r"[0-9]{7,20}", sender):
+                    continue
+                duplicate = db.scalar(select(Message.id).where(
+                    Message.organization_id == org_id, Message.provider_message_id == message_id,
+                ))
+                if duplicate:
+                    continue
+                kind = str(incoming.get("type") or "unknown")
+                segment = incoming.get(kind) if isinstance(incoming.get(kind), dict) else {}
+                if kind == "text":
+                    body_text = str(segment.get("body") or "").strip()
+                elif kind in {"image", "video", "document", "audio", "sticker"}:
+                    caption = str(segment.get("caption") or "").strip()
+                    media_name = {"image":"صورة", "video":"فيديو", "document":"مستند", "audio":"رسالة صوتية", "sticker":"ملصق"}.get(kind, "وسيط")
+                    media_id = str(segment.get("id") or "")
+                    body_text = f"[{media_name} وارد عبر WhatsApp]" + (f" {caption}" if caption else "") + (f" (media_id: {media_id})" if media_id else "")
+                elif kind == "interactive":
+                    button = segment.get("button_reply") if isinstance(segment.get("button_reply"), dict) else {}
+                    list_reply = segment.get("list_reply") if isinstance(segment.get("list_reply"), dict) else {}
+                    body_text = str(button.get("title") or list_reply.get("title") or "رد تفاعلي عبر WhatsApp")
+                else:
+                    body_text = f"[رسالة WhatsApp من النوع {kind}]"
+                if not body_text:
+                    continue
+                phone = "+" + sender
+                contact = db.scalar(select(Contact).where(
+                    Contact.organization_id == org_id, or_(Contact.phone == phone, Contact.phone == sender),
+                ))
+                if contact is None:
+                    contact = Contact(
+                        organization_id=org_id, name=names_by_phone.get(sender) or phone,
+                        phone=phone, source="WhatsApp", stage="new", value=0, notes="",
+                    )
+                    db.add(contact)
+                    db.flush()
+                conversation = db.scalar(select(Conversation).where(
+                    Conversation.organization_id == org_id,
+                    Conversation.channel == "WhatsApp", Conversation.external_id == sender,
+                ))
+                if conversation is None:
+                    conversation = Conversation(
+                        organization_id=org_id, channel="WhatsApp", contact_id=contact.id,
+                        external_id=sender, status="open",
+                    )
+                    db.add(conversation)
+                    db.flush()
+                now = utcnow()
+                db.add(Message(
+                    organization_id=org_id, conversation_id=conversation.id,
+                    direction="inbound", body=body_text[:20000],
+                    provider_message_id=message_id, delivery_status="received", created_at=now,
+                ))
+                conversation.last_message_at = now
+                if conversation.status == "closed":
+                    conversation.status = "open"
+                stored_messages += 1
+            for receipt in value.get("statuses", []) if isinstance(value.get("statuses"), list) else []:
+                if not isinstance(receipt, dict) or not receipt.get("id") or not receipt.get("status"):
+                    continue
+                message = db.scalar(select(Message).where(
+                    Message.organization_id == org_id, Message.provider_message_id == str(receipt["id"]),
+                ))
+                new_status = str(receipt["status"]).casefold()
+                if message is not None and new_status in {"sent", "delivered", "read", "failed"}:
+                    message.delivery_status = new_status
+    db.commit()
+    return {"received": True, "stored_messages": stored_messages}
 
 
 @app.get(f"{API_PREFIX}/integrations/meta/config")
@@ -1657,10 +2238,11 @@ async def meta_connect_callback(
     try:
         token_payload = await exchange_meta_code(config, code)
         long_payload = await exchange_for_long_lived_token(config, token_payload["access_token"])
+        granted_scopes = await list_granted_permissions(config, long_payload["access_token"])
         pages = await list_managed_pages(config, long_payload["access_token"])
         if not pages:
             return finish("no_pages")
-        scopes = tuple(META_SCOPES)
+        scopes = tuple(granted_scopes)
         saved = 0
         for page in pages:
             page_id = str(page.get("id") or "").strip()
@@ -2073,20 +2655,100 @@ def update_conversation(conversation_id: str, data: ConversationUpdate, ctx: Aut
 
 
 @app.post(f"{API_PREFIX}/conversations/{{conversation_id}}/messages", response_model=MessageOut, status_code=201)
-def create_local_message(conversation_id: str, data: MessageCreate, ctx: AuthContext = Depends(get_context), db: Session = Depends(get_db)):
+async def create_local_message(conversation_id: str, data: MessageCreate, ctx: AuthContext = Depends(get_context), db: Session = Depends(get_db)):
     require_write(ctx, "inbox")
-    conversation = db.scalar(select(Conversation).where(Conversation.id == conversation_id, Conversation.organization_id == ctx.organization.id))
+    conversation = db.scalar(select(Conversation).where(
+        Conversation.id == conversation_id, Conversation.organization_id == ctx.organization.id,
+    ))
     if not conversation:
         not_found("المحادثة")
-    # This stores a draft/local note only. Actual provider send/receive requires an approved connector and is deliberately not simulated.
+
+    body = data.body.strip()
+    if conversation.channel == "WhatsApp" and data.direction == "outbound":
+        if not env_flag("ENABLE_EXTERNAL_PUBLISHING", default=False):
+            raise HTTPException(status_code=423, detail="الإرسال الخارجي متوقف افتراضيًا. لم تُرسل أي رسالة؛ فعّل ENABLE_EXTERNAL_PUBLISHING صراحةً بعد التحقق من الإعدادات.")
+        config = get_whatsapp_config()
+        if config is None:
+            raise HTTPException(status_code=503, detail="إعداد WhatsApp Business غير مكتمل على الخادم.")
+        account = db.scalar(select(SocialAccount).where(
+            SocialAccount.organization_id == ctx.organization.id,
+            SocialAccount.platform == "WhatsApp",
+            SocialAccount.connection_status == "connected",
+            SocialAccount.provider_account_id.is_not(None),
+        ))
+        if account is None:
+            raise HTTPException(status_code=409, detail="تحقق من رقم WhatsApp Business أولًا من صفحة التكاملات.")
+        if not conversation.external_id or not re.fullmatch(r"[0-9]{7,20}", conversation.external_id):
+            raise HTTPException(status_code=422, detail="المحادثة لا تحتوي رقم WhatsApp صالحًا بصيغة دولية.")
+        try:
+            credential = load_provider_credential(
+                db, organization_id=ctx.organization.id, social_account_id=account.id,
+            )
+        except (CredentialStoreError, CredentialScopeError, TokenVaultError) as exc:
+            raise HTTPException(status_code=409, detail="تعذر فك اعتماد WhatsApp المشفر بأمان؛ أعد التحقق من رقم الأعمال.") from exc
+        if credential is None:
+            raise HTTPException(status_code=409, detail="لا يوجد اعتماد WhatsApp مشفر لهذا الرقم؛ أعد التحقق من رقم الأعمال.")
+        try:
+            delivery = await whatsapp_send_text(
+                graph_version=config["graph_version"],
+                phone_number_id=account.provider_account_id,
+                access_token=credential.access_token,
+                recipient=conversation.external_id,
+                text=body,
+            )
+        except WhatsAppDeliveryUnknown as exc:
+            now = utcnow()
+            message = Message(
+                organization_id=ctx.organization.id, conversation_id=conversation.id,
+                direction="outbound", body=body, delivery_status="delivery_unknown", created_at=now,
+            )
+            conversation.last_message_at = now
+            if conversation.status == "closed":
+                conversation.status = "open"
+            db.add(message)
+            db.flush()
+            audit(db, ctx, "whatsapp.message_outcome_unknown", "message", message.id, {
+                "conversation_id": conversation.id, "account_id": account.id,
+            })
+            db.commit()
+            db.refresh(message)
+            raise HTTPException(status_code=502, detail="أرسل M الطلب، لكن WhatsApp لم يؤكد النتيجة. افحص المحادثة قبل أي إعادة محاولة.") from exc
+        except WhatsAppCloudError as exc:
+            raise HTTPException(status_code=502, detail=f"رفض WhatsApp إرسال الرسالة: {str(exc)[:300]}") from exc
+
+        now = utcnow()
+        message = Message(
+            organization_id=ctx.organization.id, conversation_id=conversation.id,
+            direction="outbound", body=body,
+            provider_message_id=delivery["message_id"], delivery_status="sent", created_at=now,
+        )
+        conversation.last_message_at = now
+        if conversation.status == "closed":
+            conversation.status = "open"
+        db.add(message)
+        db.flush()
+        audit(db, ctx, "whatsapp.message_sent", "message", message.id, {
+            "conversation_id": conversation.id, "account_id": account.id,
+            "provider_message_id": delivery["message_id"],
+        })
+        db.commit()
+        db.refresh(message)
+        return message
+
+    # Non-WhatsApp channels remain local-only until their inbound/outbound adapters are implemented.
     now = utcnow()
-    message = Message(organization_id=ctx.organization.id, conversation_id=conversation.id, direction=data.direction, body=data.body.strip(), delivery_status="local_only", created_at=now)
+    message = Message(
+        organization_id=ctx.organization.id, conversation_id=conversation.id,
+        direction=data.direction, body=body, delivery_status="local_only", created_at=now,
+    )
     conversation.last_message_at = now
     if conversation.status == "closed":
         conversation.status = "open"
     db.add(message)
     db.flush()
-    audit(db, ctx, "created", "message", message.id, {"conversation_id": conversation.id, "delivery_status": "local_only"})
+    audit(db, ctx, "created", "message", message.id, {
+        "conversation_id": conversation.id, "delivery_status": "local_only",
+    })
     db.commit()
     db.refresh(message)
     return message

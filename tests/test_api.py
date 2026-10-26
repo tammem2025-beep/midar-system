@@ -88,8 +88,8 @@ def test_health_setup_and_core_crud(client: TestClient, monkeypatch):
     monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
     root = client.get("/")
     assert root.status_code == 200
-    assert '<title>M</title>' in root.text and "0.23.1" in root.text
-    assert 'href="/midar-ui.css?v=0.23.1"' in root.text
+    assert '<title>M</title>' in root.text and "0.24.0" in root.text
+    assert 'href="/midar-ui.css?v=0.24.0"' in root.text
     assert root.text.count('rel="stylesheet"') == 1
     assert client.get("/midar-ui.css").status_code == 200
     for retired in ("/styles.css", "/theme.css", "/visual-upgrade.css", "/settings-enhanced.css", "/premium-settings.css", "/experience.css", "/premium-experience.css", "/visual-redesign.css", "/dashboard-command.css", "/premium-shell.css", "/content-calendar.css"):
@@ -112,7 +112,7 @@ def test_health_setup_and_core_crud(client: TestClient, monkeypatch):
     assert settings_css_asset.status_code == 200
     for required_ui_function in ("renderEnhancedSettings", "processGoogleRedirect", "configureGoogleLogin", "loadAndApplyPreferences", "applyAppearancePrefs", "startGoogleLogin"):
         assert f"function {required_ui_function}" in settings_js_asset.text
-    assert 'href="/midar-ui.css?v=0.23.1"' in root.text
+    assert 'href="/midar-ui.css?v=0.24.0"' in root.text
     assert 'src="/settings-enhanced.js' in root.text
     assert css_asset.status_code == 200 and ".provider-grid" in css_asset.text
     assert icon_asset.status_code == 200 and "linearGradient" in icon_asset.text
@@ -178,7 +178,7 @@ def test_health_setup_and_core_crud(client: TestClient, monkeypatch):
     providers = {p["platform"]: p for p in integrations.json()["providers"]}
     assert providers["Telegram"]["connector_implemented"] is True
     assert providers["Telegram"]["supported_actions"] == ["verify_channel", "publish_text"]
-    assert all(not p["connector_implemented"] for name, p in providers.items() if name not in {"Telegram", "Facebook", "Instagram"})
+    assert all(not p["connector_implemented"] for name, p in providers.items() if name not in {"Telegram", "Facebook", "Instagram", "WhatsApp", "X", "LinkedIn", "TikTok", "YouTube"})
 
 
 
@@ -189,13 +189,13 @@ def test_provider_catalog_is_truthful_and_never_exposes_secret_values(client: Te
     response = client.get("/api/v1/integrations/catalog", headers=owner)
     assert response.status_code == 200, response.text
     payload = response.json()
-    assert payload["release"] == "0.23.1"
+    assert payload["release"] == "0.24.0"
     providers = {p["platform"]: p for p in payload["providers"]}
     assert set(providers) == {"Facebook", "Instagram", "WhatsApp", "Telegram", "X", "YouTube", "TikTok", "LinkedIn", "Other"}
     assert providers["Telegram"]["implementation_status"] == "partial"
     assert providers["Telegram"]["implemented_capabilities"] == ["verify_destination", "publish_text"]
     assert providers["Facebook"]["implementation_status"] == "partial"
-    assert providers["Facebook"]["implemented_capabilities"] == ["account_authorization", "read_page_posts", "read_page_videos"]
+    assert providers["Facebook"]["implemented_capabilities"] == ["account_authorization", "read_page_posts", "read_page_videos", "publish_page_text"]
     assert all((p["docs_url"] is None or p["docs_url"].startswith("https://")) for p in providers.values())
     assert secret not in response.text
     assert "التسجيل في الكتالوج لا يعني" in payload["notice"]
@@ -360,7 +360,7 @@ def test_local_inbox_records_are_explicitly_not_sent(client: TestClient):
     contact = client.post("/api/v1/contacts", headers=headers, json={"name": "عميل محادثة"})
     assert contact.status_code == 201
     conversation = client.post("/api/v1/conversations", headers=headers, json={
-        "channel": "WhatsApp", "contact_id": contact.json()["id"], "status": "open"
+        "channel": "Telegram", "contact_id": contact.json()["id"], "status": "open"
     })
     assert conversation.status_code == 201
     conversation_id = conversation.json()["id"]
@@ -804,10 +804,10 @@ def test_short_video_drafts_are_persisted_validated_and_workspace_scoped(client:
 def test_experience_layer_and_command_center_are_served(client: TestClient):
     root = client.get("/")
     assert root.status_code == 200
-    assert 'href="/midar-ui.css?v=0.23.1"' in root.text
+    assert 'href="/midar-ui.css?v=0.24.0"' in root.text
     assert root.text.count('rel="stylesheet"') == 1
-    assert 'src="/command-center.js?v=0.23.1"' in root.text
-    assert root.text.index('src="/app.js?v=0.23.1"') < root.text.index('src="/command-center.js?v=0.23.1"')
+    assert 'src="/command-center.js?v=0.24.0"' in root.text
+    assert root.text.index('src="/app.js?v=0.24.0"') < root.text.index('src="/command-center.js?v=0.24.0"')
     css = client.get("/midar-ui.css")
     js = client.get("/command-center.js")
     assert css.status_code == 200 and "xp-command-dialog" in css.text
@@ -820,9 +820,9 @@ def test_experience_layer_and_command_center_are_served(client: TestClient):
         assert fragment in app_js.text
     assert all(fragment in css.text for fragment in (".workspace-hero", ".upcoming-item", "prefers-reduced-motion", ":focus-visible", ".review-note", ".cm-month-grid"))
     sw = client.get("/sw.js")
-    assert sw.status_code == 200 and "m-shell-v0230" in sw.text
-    assert "'/midar-ui.css?v=0.23.1'" in sw.text
-    assert "'/command-center.js?v=0.23.1'" in sw.text
+    assert sw.status_code == 200 and "m-shell-v0240" in sw.text
+    assert "'/midar-ui.css?v=0.24.0'" in sw.text
+    assert "'/command-center.js?v=0.24.0'" in sw.text
     for retired in ("'/experience.css", "'/dashboard-command.css", "'/premium-shell.css", "'/content-calendar.css"):
         assert retired not in sw.text
 
@@ -886,14 +886,14 @@ def test_stylesheet_bundle_is_single_ordered_runtime_asset(client: TestClient):
     assert "overflow-y: auto" in bundle.text and "overscroll-behavior-y: contain" in bundle.text
     assert "11-sidebar-redesign.css" in bundle.text
     sw = client.get("/sw.js")
-    assert "'/midar-ui.css?v=0.23.1'" in sw.text
-    assert "m-shell-v0230" in sw.text
+    assert "'/midar-ui.css?v=0.24.0'" in sw.text
+    assert "m-shell-v0240" in sw.text
 
 
 def test_service_worker_precaches_settings_controller_and_favicon(client: TestClient):
     sw = client.get("/sw.js")
     assert sw.status_code == 200
-    assert "m-shell-v0230" in sw.text
+    assert "m-shell-v0240" in sw.text
     assert "'/settings-enhanced.js" in sw.text
     icon = client.get("/favicon.ico")
     assert icon.status_code == 200
@@ -905,7 +905,7 @@ def test_service_worker_precaches_settings_controller_and_favicon(client: TestCl
 def test_cross_platform_pwa_manifest_and_safe_area_assets(client: TestClient):
     page = client.get("/")
     assert page.status_code == 200
-    assert 'href="/midar-ui.css?v=0.23.1"' in page.text
+    assert 'href="/midar-ui.css?v=0.24.0"' in page.text
     for token in (
         'name="apple-mobile-web-app-capable" content="yes"',
         'name="apple-mobile-web-app-status-bar-style" content="black-translucent"',
@@ -936,7 +936,7 @@ def test_cross_platform_responsive_css_and_mobile_drawer_accessibility(client: T
         assert token in css.text
     for token in ("aria-modal", "sidebar.inert=true", "event.key==='Escape'", "installButton.addEventListener('click'", "navigator.standalone", "shouldOpen?'إغلاق القائمة':'فتح القائمة'", "isAppleTouchDevice()", "document.body.style.position='fixed'", "window.scrollTo(0,mobileNavScrollY)"):
         assert token in js.text
-    assert "m-shell-v0230" in sw.text
+    assert "m-shell-v0240" in sw.text
     for asset in ("/icon-192.png", "/icon-512.png", "/apple-touch-icon.png"):
         assert f"'{asset}'" in sw.text
 
@@ -1458,6 +1458,7 @@ def test_meta_account_token_selection_and_reels_normalization():
     assert params["state"] == ["state-test"]
     assert "pages_read_user_content" in params["scope"][0]
     assert "instagram_basic" in params["scope"][0]
+    assert "pages_manage_posts" in params["scope"][0]
 
     media = _normalize_instagram({
         "id": "media-123", "caption": "Creator reel", "media_type": "VIDEO",
@@ -1491,6 +1492,10 @@ def test_meta_oauth_callback_persists_facebook_and_instagram_accounts(client: Te
         assert short_lived_token == "short-lived-user-token"
         return {"access_token": "long-lived-user-token", "expires_in": 5184000}
 
+    async def fake_granted_permissions(config, user_token):
+        assert user_token == "long-lived-user-token"
+        return ("pages_show_list", "pages_read_engagement", "pages_read_user_content", "instagram_basic", "pages_manage_posts")
+
     async def fake_list_managed_pages(config, user_token):
         assert user_token == "long-lived-user-token"
         return [{
@@ -1505,6 +1510,7 @@ def test_meta_oauth_callback_persists_facebook_and_instagram_accounts(client: Te
 
     monkeypatch.setattr(main_module, "exchange_meta_code", fake_exchange_meta_code)
     monkeypatch.setattr(main_module, "exchange_for_long_lived_token", fake_exchange_for_long_lived_token)
+    monkeypatch.setattr(main_module, "list_granted_permissions", fake_granted_permissions)
     monkeypatch.setattr(main_module, "list_managed_pages", fake_list_managed_pages)
 
     owner_headers = create_owner(client, "meta-oauth-owner@example.com")
@@ -1546,3 +1552,537 @@ def test_meta_oauth_callback_persists_facebook_and_instagram_accounts(client: Te
         assert instagram_credential is not None
         assert facebook_credential.access_token == "facebook-page-access-token"
         assert instagram_credential.access_token == "facebook-page-access-token"
+
+
+
+def _prepare_connected_facebook_page(client: TestClient, owner_headers: dict[str, str], email: str, page_id: str = "123456789") -> str:
+    from app.integrations.credential_store import store_provider_credential
+    from app.security_tokens import generate_provider_encryption_key
+
+    account_response = client.post("/api/v1/social-accounts", headers=owner_headers, json={
+        "platform": "Facebook", "account_name": "صفحة اختبار Facebook", "handle": "@midar_facebook_test",
+    })
+    assert account_response.status_code == 201, account_response.text
+    account_id = account_response.json()["id"]
+    with SessionLocal() as db:
+        user = db.query(User).filter(User.email == email).one()
+        membership = db.query(Membership).filter(Membership.user_id == user.id).one()
+        account = db.get(SocialAccount, account_id)
+        account.connection_status = "connected"
+        account.provider_account_id = page_id
+        store_provider_credential(
+            db, organization_id=membership.organization_id, social_account_id=account.id,
+            actor_user_id=user.id, provider="Facebook", access_token="encrypted-facebook-page-token",
+            scopes=("pages_show_list", "pages_read_engagement", "pages_manage_posts"),
+        )
+        db.commit()
+    return account_id
+
+
+def test_facebook_page_text_publish_uses_encrypted_page_credential_and_prevents_duplicate(
+    client: TestClient, monkeypatch,
+):
+    monkeypatch.setenv("ENABLE_EXTERNAL_PUBLISHING", "true")
+    monkeypatch.setenv("META_APP_ID", "test-meta-app-id")
+    monkeypatch.setenv("META_APP_SECRET", "test-meta-app-secret")
+    monkeypatch.setenv("META_REDIRECT_URI", "http://127.0.0.1:8000/api/v1/integrations/meta/callback")
+    monkeypatch.setenv("META_GRAPH_API_VERSION", "v26.0")
+    from app.security_tokens import generate_provider_encryption_key
+    monkeypatch.setenv("PROVIDER_TOKEN_ENCRYPTION_KEY", generate_provider_encryption_key())
+
+    owner_email = "facebook-publish-owner@example.com"
+    headers = create_owner(client, owner_email)
+    account_id = _prepare_connected_facebook_page(client, headers, owner_email)
+    sends = []
+
+    async def fake_publish(config, page_id, page_token, message):
+        sends.append((config["version"], page_id, page_token, message))
+        return {"id": "123456789_987654321", "post_id": "987654321"}
+
+    monkeypatch.setattr(main_module, "meta_publish_page_text", fake_publish)
+    created = client.post("/api/v1/posts", headers=headers, json={
+        "title": "إطلاق من مدار", "content": "منشور حقيقي لصفحة Facebook",
+        "platform": "Facebook", "status": "draft", "social_account_id": account_id,
+    })
+    assert created.status_code == 201, created.text
+
+    published = client.post(f"/api/v1/posts/{created.json()['id']}/publish", headers=headers)
+    assert published.status_code == 200, published.text
+    assert published.json()["status"] == "published"
+    assert published.json()["provider_post_id"] == "123456789_987654321"
+    assert published.json()["published_at"] is not None
+    assert sends == [("v26.0", "123456789", "encrypted-facebook-page-token", "منشور حقيقي لصفحة Facebook")]
+
+    duplicate = client.post(f"/api/v1/posts/{created.json()['id']}/publish", headers=headers)
+    assert duplicate.status_code == 409
+    assert len(sends) == 1
+
+
+def test_facebook_publishing_is_blocked_without_granted_write_scope(client: TestClient, monkeypatch):
+    monkeypatch.setenv("ENABLE_EXTERNAL_PUBLISHING", "true")
+    monkeypatch.setenv("META_APP_ID", "test-meta-app-id")
+    monkeypatch.setenv("META_APP_SECRET", "test-meta-app-secret")
+    monkeypatch.setenv("META_REDIRECT_URI", "http://127.0.0.1:8000/api/v1/integrations/meta/callback")
+    monkeypatch.setenv("META_GRAPH_API_VERSION", "v26.0")
+    from app.integrations.credential_store import store_provider_credential
+    from app.security_tokens import generate_provider_encryption_key
+    monkeypatch.setenv("PROVIDER_TOKEN_ENCRYPTION_KEY", generate_provider_encryption_key())
+    owner_email = "facebook-readonly-owner@example.com"
+    headers = create_owner(client, owner_email)
+    account_response = client.post("/api/v1/social-accounts", headers=headers, json={
+        "platform": "Facebook", "account_name": "صفحة قراءة فقط", "handle": "@midar_readonly",
+    })
+    assert account_response.status_code == 201, account_response.text
+    account_id = account_response.json()["id"]
+    with SessionLocal() as db:
+        user = db.query(User).filter(User.email == owner_email).one()
+        membership = db.query(Membership).filter(Membership.user_id == user.id).one()
+        account = db.get(SocialAccount, account_id)
+        account.connection_status = "connected"
+        account.provider_account_id = "234567890"
+        store_provider_credential(
+            db, organization_id=membership.organization_id, social_account_id=account.id,
+            actor_user_id=user.id, provider="Facebook", access_token="encrypted-read-only-page-token",
+            scopes=("pages_show_list", "pages_read_engagement"),
+        )
+        db.commit()
+    post = client.post("/api/v1/posts", headers=headers, json={
+        "title": "قراءة فقط", "content": "لن يرسل هذا النص", "platform": "Facebook",
+        "status": "draft", "social_account_id": account_id,
+    })
+    assert post.status_code == 201, post.text
+    sent = []
+
+    async def fake_publish(*args, **kwargs):
+        sent.append(True)
+        return {"id": "should-not-happen"}
+
+    monkeypatch.setattr(main_module, "meta_publish_page_text", fake_publish)
+    response = client.post(f"/api/v1/posts/{post.json()['id']}/publish", headers=headers)
+    assert response.status_code == 409
+    assert "pages_manage_posts" in response.text
+    assert sent == []
+
+
+
+def _configure_whatsapp_test(monkeypatch):
+    from app.security_tokens import generate_provider_encryption_key
+    monkeypatch.setenv("WHATSAPP_PHONE_NUMBER_ID", "1234567890")
+    monkeypatch.setenv("WHATSAPP_ACCESS_TOKEN", "test-whatsapp-cloud-token")
+    monkeypatch.setenv("WHATSAPP_VERIFY_TOKEN", "test-whatsapp-verify-token")
+    monkeypatch.setenv("WHATSAPP_APP_SECRET", "test-whatsapp-app-secret")
+    monkeypatch.setenv("WHATSAPP_GRAPH_API_VERSION", "v26.0")
+    monkeypatch.setenv("PROVIDER_TOKEN_ENCRYPTION_KEY", generate_provider_encryption_key())
+
+
+async def _fake_whatsapp_number(config):
+    assert config["phone_number_id"] == "1234567890"
+    return {
+        "id": "1234567890",
+        "display_phone_number": "+1 555 123 4567",
+        "verified_name": "M Test Business",
+        "quality_rating": "GREEN",
+    }
+
+
+def test_whatsapp_business_connection_and_status_use_real_verified_number(client: TestClient, monkeypatch):
+    _configure_whatsapp_test(monkeypatch)
+    monkeypatch.setattr(main_module, "whatsapp_verify_business_number", _fake_whatsapp_number)
+    headers = create_owner(client, "whatsapp-verify-owner@example.com")
+
+    response = client.post("/api/v1/integrations/whatsapp/verify", headers=headers)
+    assert response.status_code == 200, response.text
+    assert response.json()["verified"] is True
+    assert response.json()["account"]["platform"] == "WhatsApp"
+    assert response.json()["account"]["provider_account_id"] == "1234567890"
+    assert response.json()["webhook_ready"] is True
+
+    status = client.get("/api/v1/integrations/status", headers=headers)
+    assert status.status_code == 200, status.text
+    providers = {item["platform"]: item for item in status.json()["providers"]}
+    assert providers["WhatsApp"]["connector_implemented"] is True
+    assert providers["WhatsApp"]["status"] == "connected"
+    assert providers["WhatsApp"]["connected_accounts"] == 1
+    assert set(providers["WhatsApp"]["supported_actions"]) == {
+        "verify_business_number", "send_text", "receive_webhooks",
+    }
+
+
+def test_whatsapp_signed_webhook_receives_real_message_and_reply_sends_via_cloud_api(
+    client: TestClient, monkeypatch,
+):
+    import hashlib
+    import hmac
+    import json
+
+    _configure_whatsapp_test(monkeypatch)
+    monkeypatch.setattr(main_module, "whatsapp_verify_business_number", _fake_whatsapp_number)
+    headers = create_owner(client, "whatsapp-inbox-owner@example.com")
+    verified = client.post("/api/v1/integrations/whatsapp/verify", headers=headers)
+    assert verified.status_code == 200, verified.text
+
+    # Meta's webhook signature is checked against the exact raw request body.
+    event = {
+        "object": "whatsapp_business_account",
+        "entry": [{
+            "changes": [{
+                "field": "messages",
+                "value": {
+                    "metadata": {"phone_number_id": "1234567890"},
+                    "contacts": [{"wa_id": "15551234567", "profile": {"name": "عميل حقيقي"}}],
+                    "messages": [{
+                        "from": "15551234567", "id": "wamid.test.inbound.001",
+                        "type": "text", "text": {"body": "مرحبًا، أريد الاستفسار"},
+                    }],
+                },
+            }],
+        }],
+    }
+    raw = json.dumps(event, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    signature = "sha256=" + hmac.new(
+        b"test-whatsapp-app-secret", raw, hashlib.sha256,
+    ).hexdigest()
+    received = client.post(
+        "/api/v1/webhooks/whatsapp", content=raw,
+        headers={"Content-Type": "application/json", "X-Hub-Signature-256": signature},
+    )
+    assert received.status_code == 200, received.text
+    assert received.json()["stored_messages"] == 1
+
+    duplicate = client.post(
+        "/api/v1/webhooks/whatsapp", content=raw,
+        headers={"Content-Type": "application/json", "X-Hub-Signature-256": signature},
+    )
+    assert duplicate.status_code == 200, duplicate.text
+    assert duplicate.json()["stored_messages"] == 0
+
+    conversations = client.get("/api/v1/conversations", headers=headers)
+    assert conversations.status_code == 200, conversations.text
+    conversation = next(item for item in conversations.json() if item["channel"] == "WhatsApp")
+    observed = client.get(f"/api/v1/conversations/{conversation['id']}/messages", headers=headers)
+    assert observed.status_code == 200, observed.text
+    assert len(observed.json()) == 1
+    assert observed.json()[0]["body"] == "مرحبًا، أريد الاستفسار"
+    assert observed.json()[0]["delivery_status"] == "received"
+
+    send_calls = []
+
+    async def fake_send(**kwargs):
+        send_calls.append(kwargs)
+        return {"message_id": "wamid.test.outbound.002", "recipient_id": "15551234567"}
+
+    monkeypatch.setattr(main_module, "whatsapp_send_text", fake_send)
+    monkeypatch.setenv("ENABLE_EXTERNAL_PUBLISHING", "false")
+    disabled = client.post(
+        f"/api/v1/conversations/{conversation['id']}/messages",
+        headers=headers, json={"direction": "outbound", "body": "أهلًا بك، كيف نساعدك؟"},
+    )
+    assert disabled.status_code == 423, disabled.text
+    assert send_calls == []
+
+    monkeypatch.setenv("ENABLE_EXTERNAL_PUBLISHING", "true")
+    reply = client.post(
+        f"/api/v1/conversations/{conversation['id']}/messages",
+        headers=headers, json={"direction": "outbound", "body": "أهلًا بك، كيف نساعدك؟"},
+    )
+    assert reply.status_code == 201, reply.text
+    assert reply.json()["delivery_status"] == "sent"
+    assert send_calls == [{
+        "graph_version": "v26.0",
+        "phone_number_id": "1234567890",
+        "access_token": "test-whatsapp-cloud-token",
+        "recipient": "15551234567",
+        "text": "أهلًا بك، كيف نساعدك؟",
+    }]
+
+
+def test_whatsapp_webhook_rejects_missing_or_invalid_signature(client: TestClient, monkeypatch):
+    _configure_whatsapp_test(monkeypatch)
+    response = client.post(
+        "/api/v1/webhooks/whatsapp",
+        content=b'{"object":"whatsapp_business_account","entry":[]}',
+        headers={"Content-Type": "application/json", "X-Hub-Signature-256": "sha256=wrong"},
+    )
+    assert response.status_code == 401
+
+
+
+def test_social_oauth_configs_build_provider_correct_scopes_and_pkce(monkeypatch):
+    import base64
+    import hashlib
+    from urllib.parse import parse_qs, urlparse
+    from app.integrations.oauth_social import get_social_oauth_config, make_social_authorization_url
+
+    monkeypatch.setenv("X_CLIENT_ID", "x-test-client")
+    monkeypatch.setenv("X_CLIENT_SECRET", "x-test-secret")
+    monkeypatch.setenv("X_REDIRECT_URI", "http://127.0.0.1:8000/api/v1/integrations/oauth/x/callback")
+    x_config = get_social_oauth_config("x")
+    assert x_config is not None and x_config.pkce is True
+    x_url = urlparse(make_social_authorization_url(x_config, "state-x", "test-challenge"))
+    x_query = parse_qs(x_url.query)
+    assert x_url.scheme == "https" and x_url.netloc == "x.com"
+    assert x_query["state"] == ["state-x"]
+    assert x_query["code_challenge"] == ["test-challenge"]
+    assert x_query["code_challenge_method"] == ["S256"]
+    assert set(x_query["scope"][0].split()) == {"users.read", "tweet.read", "tweet.write", "offline.access"}
+
+    monkeypatch.setenv("TIKTOK_CLIENT_KEY", "tiktok-test-client")
+    monkeypatch.setenv("TIKTOK_CLIENT_SECRET", "tiktok-test-secret")
+    monkeypatch.setenv("TIKTOK_REDIRECT_URI", "http://127.0.0.1:8000/api/v1/integrations/oauth/tiktok/callback")
+    tiktok_desktop = get_social_oauth_config("tiktok")
+    assert tiktok_desktop is not None and tiktok_desktop.pkce is True
+    verifier = "a" * 50
+    digest = hashlib.sha256(verifier.encode("ascii")).digest()
+    challenge = base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
+    tiktok_url = urlparse(make_social_authorization_url(tiktok_desktop, "state-tiktok", challenge))
+    tiktok_query = parse_qs(tiktok_url.query)
+    assert tiktok_query["scope"] == ["user.info.basic,video.list"]
+    assert tiktok_query["code_challenge"] == [digest.hex()]
+    assert tiktok_query["code_challenge_method"] == ["S256"]
+
+    monkeypatch.setenv("TIKTOK_REDIRECT_URI", "https://m.example.com/api/v1/integrations/oauth/tiktok/callback")
+    tiktok_web = get_social_oauth_config("tiktok")
+    assert tiktok_web is not None and tiktok_web.pkce is False
+    tiktok_web_url = urlparse(make_social_authorization_url(tiktok_web, "state-web", challenge))
+    tiktok_web_query = parse_qs(tiktok_web_url.query)
+    assert tiktok_web_query["scope"] == ["user.info.basic,video.list"]
+    assert "code_challenge" not in tiktok_web_query
+
+    monkeypatch.setenv("LINKEDIN_CLIENT_ID", "linkedin-test-client")
+    monkeypatch.setenv("LINKEDIN_CLIENT_SECRET", "linkedin-test-secret")
+    monkeypatch.setenv("LINKEDIN_REDIRECT_URI", "http://127.0.0.1:8000/api/v1/integrations/oauth/linkedin/callback")
+    assert get_social_oauth_config("linkedin") is None
+    monkeypatch.setenv("LINKEDIN_REDIRECT_URI", "https://m.example.com/api/v1/integrations/oauth/linkedin/callback")
+    linkedin = get_social_oauth_config("linkedin")
+    assert linkedin is not None and linkedin.pkce is False
+    linkedin_url = urlparse(make_social_authorization_url(linkedin, "state-linkedin", "unused"))
+    assert linkedin_url.netloc == "www.linkedin.com"
+    assert parse_qs(linkedin_url.query)["scope"] == ["openid profile email w_member_social"]
+
+
+
+@pytest.mark.asyncio
+async def test_social_oauth_refresh_uses_provider_specific_credentials(monkeypatch):
+    import httpx
+    from datetime import datetime, timezone
+    from app.integrations.oauth_social import get_social_oauth_config, refresh_provider_access_token
+    import app.integrations.oauth_social as social_oauth
+
+    monkeypatch.setenv("X_CLIENT_ID", "x-refresh-client")
+    monkeypatch.setenv("X_CLIENT_SECRET", "x-refresh-secret")
+    monkeypatch.setenv("X_REDIRECT_URI", "http://127.0.0.1:8000/api/v1/integrations/oauth/x/callback")
+    config = get_social_oauth_config("x")
+    assert config is not None
+
+    calls = []
+
+    class FakeAsyncClient:
+        def __init__(self, **kwargs):
+            calls.append({"timeout": kwargs.get("timeout"), "follow_redirects": kwargs.get("follow_redirects")})
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def post(self, url, *, data, auth, headers):
+            calls.append({"url": url, "data": dict(data), "auth": auth, "headers": headers})
+            return httpx.Response(200, json={
+                "access_token": "x-refreshed-access",
+                "refresh_token": "x-rotated-refresh",
+                "token_type": "bearer",
+                "expires_in": 7200,
+                "scope": "users.read tweet.read tweet.write offline.access",
+            })
+
+    monkeypatch.setattr(social_oauth.httpx, "AsyncClient", FakeAsyncClient)
+    refreshed = await refresh_provider_access_token(config, "x-old-refresh")
+    request = calls[1]
+    assert request["url"] == "https://api.x.com/2/oauth2/token"
+    assert request["data"] == {"grant_type": "refresh_token", "refresh_token": "x-old-refresh"}
+    assert isinstance(request["auth"], httpx.BasicAuth)
+    assert refreshed.access_token == "x-refreshed-access"
+    assert refreshed.refresh_token == "x-rotated-refresh"
+    assert set(refreshed.scopes) == {"users.read", "tweet.read", "tweet.write", "offline.access"}
+    assert refreshed.expires_at is not None
+    assert refreshed.expires_at > datetime.now(timezone.utc) + timedelta(hours=1)
+
+
+@pytest.mark.asyncio
+async def test_tiktok_refresh_reads_nested_token_response_and_keeps_rotated_token(monkeypatch):
+    import httpx
+    from app.integrations.oauth_social import get_social_oauth_config, refresh_provider_access_token
+    import app.integrations.oauth_social as social_oauth
+
+    monkeypatch.setenv("TIKTOK_CLIENT_KEY", "tiktok-refresh-client")
+    monkeypatch.setenv("TIKTOK_CLIENT_SECRET", "tiktok-refresh-secret")
+    monkeypatch.setenv("TIKTOK_REDIRECT_URI", "http://127.0.0.1:8000/api/v1/integrations/oauth/tiktok/callback")
+    config = get_social_oauth_config("tiktok")
+    assert config is not None
+
+    calls = []
+
+    class FakeAsyncClient:
+        def __init__(self, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def post(self, url, *, data, auth, headers):
+            calls.append({"url": url, "data": dict(data), "auth": auth})
+            return httpx.Response(200, json={
+                "message": "success",
+                "data": {
+                    "access_token": "tiktok-refreshed-access",
+                    "refresh_token": "tiktok-rotated-refresh",
+                    "token_type": "Bearer",
+                    "expires_in": 86400,
+                    "scope": "user.info.basic,video.list",
+                    "error_code": 0,
+                },
+            })
+
+    monkeypatch.setattr(social_oauth.httpx, "AsyncClient", FakeAsyncClient)
+    refreshed = await refresh_provider_access_token(config, "tiktok-old-refresh")
+    assert calls[0]["url"] == "https://open.tiktokapis.com/v2/oauth/token/"
+    assert calls[0]["data"] == {
+        "grant_type": "refresh_token",
+        "refresh_token": "tiktok-old-refresh",
+        "client_key": "tiktok-refresh-client",
+        "client_secret": "tiktok-refresh-secret",
+    }
+    assert refreshed.access_token == "tiktok-refreshed-access"
+    assert refreshed.refresh_token == "tiktok-rotated-refresh"
+    assert set(refreshed.scopes) == {"user.info.basic", "video.list"}
+
+
+
+def test_existing_social_credential_can_be_rotated_by_active_workspace_member(client: TestClient, monkeypatch):
+    from app.integrations.credential_store import (
+        load_provider_credential, refresh_provider_credential, store_provider_credential,
+    )
+    from app.security_tokens import generate_provider_encryption_key
+
+    monkeypatch.setenv("PROVIDER_TOKEN_ENCRYPTION_KEY", generate_provider_encryption_key())
+    owner_headers = create_owner(client, "oauth-refresh-owner@example.com")
+    account_response = client.post("/api/v1/social-accounts", headers=owner_headers, json={
+        "platform": "X", "account_name": "X refresh test", "handle": "@x-refresh-test",
+    })
+    assert account_response.status_code == 201, account_response.text
+    account_id = account_response.json()["id"]
+
+    with SessionLocal() as db:
+        owner = db.query(User).filter(User.email == "oauth-refresh-owner@example.com").one()
+        membership = db.query(Membership).filter(Membership.user_id == owner.id).one()
+        account = db.get(SocialAccount, account_id)
+        account.connection_status = "connected"
+        account.provider_account_id = "1234509876"
+        db.commit()
+        store_provider_credential(
+            db, organization_id=membership.organization_id, social_account_id=account_id,
+            actor_user_id=owner.id, provider="X", access_token="old-x-access",
+            refresh_token="old-x-refresh", scopes=("users.read", "tweet.read"),
+            expires_at=utcnow() + timedelta(hours=1),
+        )
+        db.commit()
+
+    editor_headers = create_member(client, owner_headers, "editor", "oauth-refresh-editor@example.com")
+    with SessionLocal() as db:
+        editor = db.query(User).filter(User.email == "oauth-refresh-editor@example.com").one()
+        membership = db.query(Membership).filter(Membership.user_id == editor.id).one()
+        refreshed_row = refresh_provider_credential(
+            db, organization_id=membership.organization_id, social_account_id=account_id,
+            actor_user_id=editor.id, access_token="new-x-access",
+            refresh_token="new-x-refresh", token_type="Bearer",
+            scopes=("users.read", "tweet.read", "tweet.write"),
+            expires_at=utcnow() + timedelta(hours=2),
+        )
+        db.commit()
+        loaded = load_provider_credential(
+            db, organization_id=membership.organization_id, social_account_id=account_id,
+        )
+        assert loaded is not None
+        assert loaded.access_token == "new-x-access"
+        assert loaded.refresh_token == "new-x-refresh"
+        assert set(loaded.scopes) == {"users.read", "tweet.read", "tweet.write"}
+        assert refreshed_row.access_token_ciphertext != "new-x-access"
+        assert "new-x-access" not in refreshed_row.access_token_ciphertext
+        audit_rows = db.query(AuditLog).filter(
+            AuditLog.organization_id == membership.organization_id,
+            AuditLog.action == "integration.credential_refreshed",
+            AuditLog.entity_id == account_id,
+        ).all()
+        assert len(audit_rows) == 1
+        assert "new-x-access" not in audit_rows[0].details
+        assert "new-x-refresh" not in audit_rows[0].details
+
+
+
+def test_real_x_oauth_callback_persists_verified_account_and_encrypted_tokens(client: TestClient, monkeypatch):
+    from urllib.parse import parse_qs, urlparse
+    from app.integrations.credential_store import load_provider_credential
+    from app.integrations.oauth_social import LinkedSocialIdentity
+    from app.security_tokens import generate_provider_encryption_key
+    import app.main as main_module
+
+    monkeypatch.setenv("X_CLIENT_ID", "x-oauth-test-client")
+    monkeypatch.setenv("X_CLIENT_SECRET", "x-oauth-test-secret")
+    monkeypatch.setenv("X_REDIRECT_URI", "http://127.0.0.1:8000/api/v1/integrations/oauth/x/callback")
+    monkeypatch.setenv("PROVIDER_TOKEN_ENCRYPTION_KEY", generate_provider_encryption_key())
+    headers = create_owner(client, "x-oauth-owner@example.com")
+
+    async def fake_exchange(config, *, code, code_verifier, scope_hint=""):
+        assert config.provider == "x"
+        assert code == "authorized-code"
+        assert len(code_verifier) >= 43
+        return LinkedSocialIdentity(
+            provider="x", external_id="987654321", account_name="M X Account",
+            handle="@m-x-account", access_token="secret-x-access-token",
+            refresh_token="secret-x-refresh-token", token_type="Bearer",
+            scopes=("users.read", "tweet.read", "tweet.write", "offline.access"),
+            expires_at=utcnow() + timedelta(hours=1),
+        )
+
+    monkeypatch.setattr(main_module, "exchange_and_identify", fake_exchange)
+    start = client.post("/api/v1/integrations/oauth/x/connect-url", headers=headers)
+    assert start.status_code == 200, start.text
+    authorization_url = urlparse(start.json()["authorization_url"])
+    params = parse_qs(authorization_url.query)
+    state = params["state"][0]
+    assert params["code_challenge_method"] == ["S256"]
+
+    callback = client.get(
+        "/api/v1/integrations/oauth/x/callback",
+        params={"code": "authorized-code", "state": state},
+        follow_redirects=False,
+    )
+    assert callback.status_code == 303
+    assert "provider_result=connected" in callback.headers["location"]
+
+    with SessionLocal() as db:
+        user = db.query(User).filter(User.email == "x-oauth-owner@example.com").one()
+        membership = db.query(Membership).filter(Membership.user_id == user.id).one()
+        account = db.query(SocialAccount).filter(
+            SocialAccount.organization_id == membership.organization_id,
+            SocialAccount.platform == "X",
+            SocialAccount.provider_account_id == "987654321",
+        ).one()
+        assert account.connection_status == "connected"
+        stored = db.query(IntegrationCredential).filter(
+            IntegrationCredential.organization_id == membership.organization_id,
+            IntegrationCredential.social_account_id == account.id,
+        ).one()
+        assert "secret-x-access-token" not in stored.access_token_ciphertext
+        assert "secret-x-refresh-token" not in stored.refresh_token_ciphertext
+        loaded = load_provider_credential(
+            db, organization_id=membership.organization_id, social_account_id=account.id,
+        )
+        assert loaded is not None
+        assert loaded.access_token == "secret-x-access-token"
+        assert loaded.refresh_token == "secret-x-refresh-token"
+        assert set(loaded.scopes) == {"users.read", "tweet.read", "tweet.write", "offline.access"}

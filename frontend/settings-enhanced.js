@@ -156,9 +156,13 @@ async function renderEnhancedSettings() {
       const label = partial ? 'موصل جزئي' : live ? 'منفذ' : 'قيد التطوير';
       const stateClass = partial ? 'settings-pill settings-pill-warn' : live ? 'settings-pill settings-pill-good' : 'settings-pill';
       const caps = [...(p.implemented_capabilities || []).map(x => ({name:x,live:true})), ...(p.planned_capabilities || []).map(x => ({name:x,live:false}))].slice(0,5);
-      return `<article class="settings-provider"><div class="settings-provider-head"><div class="provider-orb provider-${esc(String(p.platform).toLowerCase().replace(/[^a-z]/g,''))}">${esc(({Facebook:'f',Instagram:'◎',WhatsApp:'◉',Telegram:'➤',X:'𝕏',YouTube:'▶',TikTok:'♪',LinkedIn:'in'})[p.platform] || '•')}</div><div class="settings-provider-title"><b>${esc(p.platform)}</b><small>${esc(p.method || '')}</small></div><span class="${stateClass}">${label}</span></div><p>${esc(p.description_ar || '')}</p><div class="settings-capabilities">${caps.map(c=>`<span class="${c.live?'live':''}">${c.live?'✓':'＋'} ${esc(c.name.replaceAll('_',' '))}</span>`).join('')}</div><div class="settings-provider-foot"><small>${esc(health?.status ? ({not_configured:'لم يُهيأ',configured_channel_verification_required:'يتطلب التحقق من القناة',credentials_present_flow_pending:'البيانات موجودة لكن التدفق غير مكتمل'}[health.status] || health.status) : 'يلزم إعداد وتحقق مستقل')}</small>${p.docs_url ? `<a href="${esc(p.docs_url)}" target="_blank" rel="noopener noreferrer">الوثائق الرسمية ↗</a>` : ''}</div><p class="settings-provider-limit">${esc(p.limitations_ar || '')}</p></article>`;
+      const oauthProvider = ({Facebook:'meta',Instagram:'meta',X:'x',LinkedIn:'linkedin',YouTube:'youtube',TikTok:'tiktok'})[p.platform] || '';
+      const connected = Number(health?.connected_accounts || 0) > 0;
+      const connectLabel = connected ? 'إضافة / إعادة ربط حساب' : 'ربط حساب حقيقي';
+      const connectAction = oauthProvider ? `<button type="button" class="btn btn-primary btn-small" data-connect-provider="${oauthProvider}">${connectLabel}</button>` : p.platform === 'Telegram' ? '<button type="button" class="btn btn-small" data-connect-provider="telegram">إدارة القنوات</button>' : p.platform === 'WhatsApp' ? '<button type="button" class="btn btn-small" data-connect-provider="whatsapp">التحقق من رقم الأعمال</button>' : '';
+      return `<article class="settings-provider"><div class="settings-provider-head"><div class="provider-orb provider-${esc(String(p.platform).toLowerCase().replace(/[^a-z]/g,''))}">${esc(({Facebook:'f',Instagram:'◎',WhatsApp:'◉',Telegram:'➤',X:'𝕏',YouTube:'▶',TikTok:'♪',LinkedIn:'in'})[p.platform] || '•')}</div><div class="settings-provider-title"><b>${esc(p.platform)}</b><small>${esc(p.method || '')}</small></div><span class="${stateClass}">${label}</span></div><p>${esc(p.description_ar || '')}</p><div class="settings-capabilities">${caps.map(c=>`<span class="${c.live?'live':''}">${c.live?'✓':'＋'} ${esc(c.name.replaceAll('_',' '))}</span>`).join('')}</div><div class="settings-provider-foot"><small>${esc(health?.status ? ({not_configured:'لم يُهيأ',configured_channel_verification_required:'يتطلب التحقق من القناة',credentials_present_flow_pending:'البيانات موجودة لكن التدفق غير مكتمل',verification_required:'الإعداد جاهز؛ يلزم التحقق من رقم الأعمال',connected:'رقم WhatsApp Business متصل والاستقبال مهيأ',connected_webhook_pending:'رقم الأعمال متصل؛ يلزم إكمال إعداد Webhook',connected_configuration_missing:'الحساب محفوظ لكن إعداد الخادم ناقص',authorization_required:'جاهز لبدء التفويض',connected_read_write:'متصل مع صلاحية نشر',connected_read_only:'متصل للقراءة'}[health.status] || health.status) : 'يلزم إعداد وتحقق مستقل')}</small>${p.docs_url ? `<a href="${esc(p.docs_url)}" target="_blank" rel="noopener noreferrer">الوثائق الرسمية ↗</a>` : ''}</div><div class="settings-provider-connect">${connectAction}</div><p class="settings-provider-limit">${esc(p.limitations_ar || '')}</p></article>`;
     }).join('');
-    panel = `<section class="settings-panel-v2"><div class="settings-panel-heading"><div><span class="settings-kicker">CONNECTORS</span><h3>التكاملات الاجتماعية</h3><p>حالة كل منصة كما يعرفها الكود الحالي. تسجيل المنصة لا يعني اتصال حساب حقيقي.</p></div></div><div class="settings-provider-grid">${rows || '<p class="help">كتالوج التكاملات غير متاح لهذا الدور أو تعذر تحميله.</p>'}</div><div class="settings-note"><b>القاعدة المعتمدة</b><p>لا تظهر أي منصة على أنها متصلة إلا بعد تنفيذ OAuth أو API والتحقق من الحساب المستهدف. حاليًا Telegram هو الموصل الخارجي الجزئي، ويقتصر على التحقق من الوجهة ونشر النص يدويًا عند إعداد الرمز.</p></div></section>`;
+    panel = `<section class="settings-panel-v2"><div class="settings-panel-heading"><div><span class="settings-kicker">CONNECTORS</span><h3>التكاملات الاجتماعية</h3><p>حالة كل منصة كما يعرفها الكود الحالي. تسجيل المنصة لا يعني اتصال حساب حقيقي.</p></div></div><div class="settings-provider-grid">${rows || '<p class="help">كتالوج التكاملات غير متاح لهذا الدور أو تعذر تحميله.</p>'}</div><div class="settings-note"><b>القاعدة المعتمدة</b><p>لا تظهر أي منصة على أنها متصلة إلا بعد تنفيذ OAuth أو API والتحقق من الحساب المستهدف. حاليًا تعتمد القدرات على كل موصل: Facebook للقراءة والنشر النصي، Instagram للقراءة الاحترافية، X وLinkedIn للنصوص، YouTube وTikTok لملف الحساب والمحتوى المتاح، وWhatsApp Business للرسائل النصية عبر Webhook. تحتاج كل منصة إعداد تطبيق المطوّر والصلاحيات الرسمية؛ لا يظهر الحساب متصلًا حتى يتم التحقق منه.</p></div></section>`;
   } else {
     panel = `<section class="settings-panel-v2"><div class="settings-panel-heading"><div><span class="settings-kicker">SECURITY</span><h3>الأمان وتسجيل الدخول</h3><p>تحكم في كلمة المرور والجلسة الحالية وربط هويتك الخارجية.</p></div><span class="settings-pill settings-pill-good">اتصال محلي</span></div><div class="settings-action-row"><div><b>كلمة المرور</b><small>استخدم كلمة مرور طويلة وفريدة، ولا تشاركها مع أحد.</small></div><button type="button" class="btn" data-action="password-change">تغيير كلمة المرور</button></div><div class="settings-action-row"><div><b>حساب Google</b><small>${googleStatus.linked ? `مرتبط: ${esc(googleStatus.email || 'حساب Google')}` : 'غير مرتبط؛ اربطه من قسم حسابي الشخصي بعد إعداد OAuth.'}</small></div><button type="button" class="btn" data-settings-tab="profile">إدارة الربط</button></div><div class="settings-action-row"><div><b>تسجيل الخروج</b><small>ينهي جلسة M الحالية على هذا المتصفح.</small></div><button type="button" class="btn btn-danger" id="settingsLogoutBtn">تسجيل الخروج</button></div><div class="settings-note"><b>تنبيه الجاهزية</b><p>هذه النسخة تعمل محليًا. قبل النشر العام يلزم HTTPS، ومراجعة تخزين الجلسات، ومراقبة الدخول، واختبار الاستعادة والنسخ الاحتياطي.</p></div></section>`;
   }
@@ -196,7 +200,40 @@ async function startGoogleLink(button) {
   }
 }
 
+async function startSocialProviderConnect(button, provider) {
+  if (!button || button.disabled) return;
+  const oldText = button.textContent;
+  button.disabled = true;
+  button.textContent = 'جارٍ بدء الربط…';
+  try {
+    if (provider === 'telegram') {
+      loadPage('accounts');
+      toast('أضف وجهة Telegram من الحسابات الاجتماعية ثم تحقّق من صلاحية البوت.');
+      return;
+    }
+    if (provider === 'whatsapp') {
+      const result = await api('/integrations/whatsapp/verify', { method: 'POST' });
+      toast(result?.verified ? 'تم التحقق من رقم WhatsApp Business.' : 'لم يكتمل تحقق WhatsApp Business.');
+      midarSettingsTab = 'integrations';
+      loadPage('settings');
+      return;
+    }
+    const endpoint = provider === 'meta' ? '/integrations/meta/connect-url' : `/integrations/oauth/${provider}/connect-url`;
+    const out = await api(endpoint, { method: 'POST' });
+    const allowed = ({meta:'https://www.facebook.com/',x:'https://x.com/',linkedin:'https://www.linkedin.com/',tiktok:'https://www.tiktok.com/',youtube:'https://accounts.google.com/'})[provider];
+    if (!out.authorization_url || !allowed || !out.authorization_url.startsWith(allowed)) throw new Error('أعاد الخادم رابط تفويض غير متوقع.');
+    window.location.assign(out.authorization_url);
+  } catch (err) {
+    toast(err?.message || 'تعذر بدء ربط المنصة');
+  } finally {
+    button.disabled = false;
+    button.textContent = oldText;
+  }
+}
+
 document.addEventListener('click', event => {
+  const connectButton = event.target.closest('[data-connect-provider]');
+  if (connectButton) { startSocialProviderConnect(connectButton, connectButton.dataset.connectProvider); return; }
   const workspaceButton = event.target.closest('[data-open-workspace-settings]');
   if (workspaceButton) { midarSettingsTab = 'workspace'; loadPage('settings'); return; }
   const loginButton = event.target.closest('#googleLoginBtn');

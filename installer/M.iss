@@ -1,5 +1,5 @@
 #define ProductName "M"
-#define ProductVersion "0.23.1"
+#define ProductVersion "0.24.0"
 #define ProductPublisher "M Digital Business Management"
 
 [Setup]

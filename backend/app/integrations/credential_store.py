@@ -127,6 +127,83 @@ def store_provider_credential(
     return row
 
 
+def refresh_provider_credential(
+    db: Session,
+    *,
+    organization_id: str,
+    social_account_id: str,
+    actor_user_id: str,
+    access_token: str,
+    refresh_token: str | None,
+    token_type: str = "Bearer",
+    scopes: list[str] | tuple[str, ...] = (),
+    expires_at: datetime | None = None,
+) -> IntegrationCredential:
+    """Rotate ciphertext for an already-linked account; active workspace members may refresh only their existing grant."""
+    actor = db.get(User, actor_user_id)
+    membership = db.scalar(select(Membership).where(
+        Membership.organization_id == organization_id,
+        Membership.user_id == actor_user_id,
+    ))
+    if not actor or not actor.is_active or membership is None:
+        raise CredentialScopeError("An active workspace member is required to refresh provider credentials.")
+    account = db.scalar(select(SocialAccount).where(
+        SocialAccount.id == social_account_id,
+        SocialAccount.organization_id == organization_id,
+        SocialAccount.connection_status == "connected",
+        SocialAccount.provider_account_id.is_not(None),
+    ))
+    if account is None:
+        raise CredentialScopeError("A verified connected account is required to refresh credentials.")
+    row = db.scalar(select(IntegrationCredential).where(
+        IntegrationCredential.organization_id == organization_id,
+        IntegrationCredential.social_account_id == social_account_id,
+        IntegrationCredential.provider == account.platform,
+        IntegrationCredential.status == "active",
+    ))
+    if row is None:
+        raise CredentialStoreError("The existing credential record is missing; reconnect the provider.")
+    if (
+        not isinstance(scopes, (list, tuple)) or len(scopes) > 256
+        or any(not isinstance(item, str) or not item.strip() or len(item) > 200 for item in scopes)
+    ):
+        raise CredentialStoreError("Refreshed provider scopes are invalid or exceed the supported count.")
+    clean_scopes = sorted(set(item.strip() for item in scopes))
+    if sum(len(scope) for scope in clean_scopes) > 16_384:
+        raise CredentialStoreError("Refreshed provider scopes exceed the supported total size.")
+    clean_type = (token_type or "Bearer").strip()
+    if not clean_type or len(clean_type) > 32 or any(ord(char) < 33 or ord(char) > 126 for char in clean_type):
+        raise CredentialStoreError("Refreshed token type is invalid.")
+    if not isinstance(access_token, str) or not access_token or len(access_token) > 16384:
+        raise CredentialStoreError("Refreshed access token is invalid.")
+    if refresh_token is not None and (not isinstance(refresh_token, str) or len(refresh_token) > 16384):
+        raise CredentialStoreError("Refreshed refresh token is invalid.")
+    if expires_at is not None:
+        from datetime import timezone
+        expiry = expires_at.replace(tzinfo=timezone.utc) if expires_at.tzinfo is None else expires_at.astimezone(timezone.utc)
+        if expiry <= utcnow():
+            raise CredentialStoreError("Expired provider credentials must not be stored as active.")
+
+    access_cipher = encrypt_provider_token(access_token)
+    refresh_cipher = encrypt_provider_token(refresh_token) if refresh_token else None
+    row.access_token_ciphertext = access_cipher
+    row.refresh_token_ciphertext = refresh_cipher
+    row.token_type = clean_type
+    row.scopes_json = json.dumps(clean_scopes, separators=(",", ":"))
+    row.expires_at = expires_at
+    row.key_format = "fernet:v1"
+    row.status = "active"
+    row.updated_at = utcnow()
+    db.add(AuditLog(
+        organization_id=organization_id, user_id=actor_user_id,
+        action="integration.credential_refreshed", entity_type="social_account",
+        entity_id=social_account_id,
+        details=json.dumps({"provider": account.platform, "scope_count": len(clean_scopes), "encrypted": True}, separators=(",", ":")),
+    ))
+    db.flush()
+    return row
+
+
 def load_provider_credential(
     db: Session, *, organization_id: str, social_account_id: str,
 ) -> ProviderCredentialMaterial | None:
