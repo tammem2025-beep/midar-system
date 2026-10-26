@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+import asyncio
 from datetime import date, datetime, time, timezone, timedelta
 from pathlib import Path
 from typing import Any
@@ -25,7 +26,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from PIL import Image, UnidentifiedImageError
 
-from .db import Base, engine, get_db
+from .db import Base, SessionLocal, engine, get_db
 from .models import (AuthFailure, AuditLog, Campaign, Contact, Conversation, ExternalIdentity, IntegrationCredential, OAuthLoginGrant as GoogleLoginGrant, InstallationState, Membership, MediaAsset, Message, OAuthTransaction, Organization, Post, ShortVideoDraft, SocialAccount, Task, User, UserPreference)
 from .schemas import (
     CampaignCreate, CampaignOut, CampaignUpdate, ChangePasswordIn, ContactCreate, ContactOut, ContactUpdate,
@@ -111,20 +112,63 @@ def prepare_local_schema():
                 connection.execute(text("CREATE INDEX ix_posts_social_account_id ON posts (social_account_id)"))
 
 
+async def _scheduled_publisher_interval() -> float:
+    """Return a bounded polling interval so a bad local setting cannot spin the worker."""
+    try:
+        value = float(os.getenv("SCHEDULED_PUBLISHER_POLL_SECONDS", "15"))
+    except (TypeError, ValueError):
+        value = 15.0
+    if not math.isfinite(value):
+        value = 15.0
+    return min(300.0, max(5.0, value))
+
+
+async def _scheduled_publishing_loop() -> None:
+    """Publish eligible due posts while this M backend process remains running."""
+    interval = await _scheduled_publisher_interval()
+    while True:
+        try:
+            await _process_due_scheduled_posts_once(limit=20)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            # Do not log provider response bodies, access tokens, or exception messages.
+            request_logger.error("Scheduled publishing cycle failed (%s)", type(exc).__name__)
+        await asyncio.sleep(interval)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.ready = False
     if os.getenv("APP_ENV", "development").lower() in {"development", "test"}:
         prepare_local_schema()
     MEDIA_DIR.mkdir(parents=True, exist_ok=True)
+    app.state.scheduled_publisher_task = None
+    if (
+        os.getenv("APP_ENV", "development").lower() != "test"
+        and env_flag("ENABLE_SCHEDULED_PUBLISHER", default=True)
+    ):
+        app.state.scheduled_publisher_task = asyncio.create_task(
+            _scheduled_publishing_loop(), name="m-scheduled-publisher"
+        )
     app.state.ready = True
-    yield
+    try:
+        yield
+    finally:
+        app.state.ready = False
+        task = getattr(app.state, "scheduled_publisher_task", None)
+        if task is not None:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
 
 
 app = FastAPI(
     title="M API",
     description="M API — Manage. Connect. Grow. يتضمن تسجيل Google الاختياري وقراءة محتوى Facebook Pages وحسابات Instagram الاحترافية بعد إعداد OAuth.",
-    version="0.24.0",
+    version="0.25.0",
     lifespan=lifespan,
 )
 
@@ -1546,6 +1590,103 @@ async def publish_post(post_id: str, ctx: AuthContext = Depends(get_context), db
     db.commit()
     db.refresh(post)
     return post
+
+
+async def _process_due_scheduled_posts_once(limit: int = 20) -> int:
+    """Process a bounded batch of due posts; status compare-and-swap prevents duplicate sends."""
+    if not env_flag("ENABLE_SCHEDULED_PUBLISHER", default=True):
+        return 0
+    if not env_flag("ENABLE_EXTERNAL_PUBLISHING", default=False):
+        return 0
+
+    bounded_limit = max(1, min(int(limit), 100))
+    now = utcnow()
+    with SessionLocal() as lookup_db:
+        due_ids = list(lookup_db.scalars(
+            select(Post.id)
+            .where(
+                Post.status == "scheduled",
+                Post.scheduled_at.is_not(None),
+                Post.scheduled_at <= now,
+            )
+            .order_by(Post.scheduled_at.asc(), Post.created_at.asc())
+            .limit(bounded_limit)
+        ).all())
+
+    processed = 0
+    for post_id in due_ids:
+        with SessionLocal() as db:
+            post = db.scalar(select(Post).where(
+                Post.id == post_id,
+                Post.status == "scheduled",
+                Post.scheduled_at.is_not(None),
+                Post.scheduled_at <= utcnow(),
+            ))
+            # Another worker or a user may have changed the post after discovery.
+            if post is None:
+                continue
+
+            user = db.get(User, post.created_by)
+            organization = db.get(Organization, post.organization_id)
+            membership = db.scalar(select(Membership).where(
+                Membership.user_id == post.created_by,
+                Membership.organization_id == post.organization_id,
+            ))
+            if not user or not user.is_active or not organization or not membership:
+                post.status = "failed"
+                post.publish_error = "تعذّر النشر المجدول لأن حساب منشئ المنشور أو عضويته في مساحة العمل غير متاح."
+                post.updated_at = utcnow()
+                db.commit()
+                processed += 1
+                continue
+
+            ctx = AuthContext(user, membership, organization)
+            try:
+                await publish_post(post_id, ctx, db)
+            except HTTPException as exc:
+                # The shared manual-publish route persists definitive/ambiguous provider
+                # outcomes itself. Only turn a still-queued post into a failure here.
+                db.rollback()
+                current = db.scalar(select(Post).where(
+                    Post.id == post_id, Post.organization_id == organization.id
+                ))
+                if current is not None and current.status == "scheduled":
+                    detail = str(exc.detail or "رفضت المنصة طلب النشر")
+                    current.status = "failed"
+                    current.publish_error = ("فشل النشر المجدول: " + detail)[:900]
+                    current.updated_at = utcnow()
+                    audit(db, ctx, "scheduled_publish_failed", "post", current.id, {
+                        "reason": current.publish_error[:180],
+                    })
+                    db.commit()
+                # Leave a post in publishing untouched: a concurrent worker may own it.
+                processed += 1
+            except Exception as exc:
+                # An unexpected error after the send may have started is ambiguous.
+                # Never automatically retry it, because that could publish duplicates.
+                db.rollback()
+                current = db.scalar(select(Post).where(
+                    Post.id == post_id, Post.organization_id == organization.id
+                ))
+                if current is not None and current.status in {"scheduled", "publishing"}:
+                    was_claimed = current.status == "publishing"
+                    current.status = "delivery_unknown" if was_claimed else "failed"
+                    current.publish_error = (
+                        "تعذّر تأكيد نتيجة النشر المجدول؛ افحص الوجهة الخارجية قبل إعادة المحاولة."
+                        if was_claimed else
+                        "تعذّر بدء النشر المجدول. راجع إعداد الحساب وموعد النشر ثم حاول مجددًا."
+                    )
+                    current.updated_at = utcnow()
+                    audit(db, ctx, "scheduled_publish_outcome_unknown" if was_claimed else "scheduled_publish_failed",
+                          "post", current.id, {"error_type": type(exc).__name__})
+                    db.commit()
+                request_logger.error(
+                    "Scheduled post processing failed for %s (%s)", post_id, type(exc).__name__
+                )
+                processed += 1
+            else:
+                processed += 1
+    return processed
 
 
 @app.post(f"{API_PREFIX}/posts/{{post_id}}/resolve-delivery", response_model=PostOut)
