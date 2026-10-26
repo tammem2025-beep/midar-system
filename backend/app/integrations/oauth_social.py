@@ -202,7 +202,7 @@ async def exchange_and_identify(
             )
             token_response = await _json_response(response, provider=config.provider, operation="token exchange")
             if config.provider == "tiktok":
-                token_payload = token_response.get("data") if isinstance(token_response.get("data"), dict) else {}
+                token_payload = token_response.get("data") if isinstance(token_response.get("data"), dict) else token_response
                 if token_response.get("message") not in {None, "success"} or token_payload.get("error_code") not in {None, 0}:
                     raise SocialOAuthError("TikTok rejected authorization; confirm Login Kit and requested scopes are approved.")
             else:
