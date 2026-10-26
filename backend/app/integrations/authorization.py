@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 
 from ..models import AuditLog, Membership, OAuthTransaction, Organization, ProviderOAuthBinding, User, utcnow
 
-_PROVIDER_KEY = re.compile(r"^[a-z][a-z0-9_-]{1,31}$")
+_PROVIDER_KEY = re.compile(r"^[a-z][a-z0-9_-]{0,31}$")
 _ALLOWED_PURPOSES = {"login", "setup", "link", "identity_link", "connect"}
 
 
