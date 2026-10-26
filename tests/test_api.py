@@ -2020,3 +2020,69 @@ def test_existing_social_credential_can_be_rotated_by_active_workspace_member(cl
         assert len(audit_rows) == 1
         assert "new-x-access" not in audit_rows[0].details
         assert "new-x-refresh" not in audit_rows[0].details
+
+
+
+def test_real_x_oauth_callback_persists_verified_account_and_encrypted_tokens(client: TestClient, monkeypatch):
+    from urllib.parse import parse_qs, urlparse
+    from app.integrations.credential_store import load_provider_credential
+    from app.integrations.oauth_social import LinkedSocialIdentity
+    from app.security_tokens import generate_provider_encryption_key
+    import app.main as main_module
+
+    monkeypatch.setenv("X_CLIENT_ID", "x-oauth-test-client")
+    monkeypatch.setenv("X_CLIENT_SECRET", "x-oauth-test-secret")
+    monkeypatch.setenv("X_REDIRECT_URI", "http://127.0.0.1:8000/api/v1/integrations/oauth/x/callback")
+    monkeypatch.setenv("PROVIDER_TOKEN_ENCRYPTION_KEY", generate_provider_encryption_key())
+    headers = create_owner(client, "x-oauth-owner@example.com")
+
+    async def fake_exchange(config, *, code, code_verifier, scope_hint=""):
+        assert config.provider == "x"
+        assert code == "authorized-code"
+        assert len(code_verifier) >= 43
+        return LinkedSocialIdentity(
+            provider="x", external_id="987654321", account_name="M X Account",
+            handle="@m-x-account", access_token="secret-x-access-token",
+            refresh_token="secret-x-refresh-token", token_type="Bearer",
+            scopes=("users.read", "tweet.read", "tweet.write", "offline.access"),
+            expires_at=utcnow() + timedelta(hours=1),
+        )
+
+    monkeypatch.setattr(main_module, "exchange_and_identify", fake_exchange)
+    start = client.post("/api/v1/integrations/oauth/x/connect-url", headers=headers)
+    assert start.status_code == 200, start.text
+    authorization_url = urlparse(start.json()["authorization_url"])
+    params = parse_qs(authorization_url.query)
+    state = params["state"][0]
+    assert params["code_challenge_method"] == ["S256"]
+
+    callback = client.get(
+        "/api/v1/integrations/oauth/x/callback",
+        params={"code": "authorized-code", "state": state},
+        follow_redirects=False,
+    )
+    assert callback.status_code == 303
+    assert "provider_result=connected" in callback.headers["location"]
+
+    with SessionLocal() as db:
+        user = db.query(User).filter(User.email == "x-oauth-owner@example.com").one()
+        membership = db.query(Membership).filter(Membership.user_id == user.id).one()
+        account = db.query(SocialAccount).filter(
+            SocialAccount.organization_id == membership.organization_id,
+            SocialAccount.platform == "X",
+            SocialAccount.provider_account_id == "987654321",
+        ).one()
+        assert account.connection_status == "connected"
+        stored = db.query(IntegrationCredential).filter(
+            IntegrationCredential.organization_id == membership.organization_id,
+            IntegrationCredential.social_account_id == account.id,
+        ).one()
+        assert "secret-x-access-token" not in stored.access_token_ciphertext
+        assert "secret-x-refresh-token" not in stored.refresh_token_ciphertext
+        loaded = load_provider_credential(
+            db, organization_id=membership.organization_id, social_account_id=account.id,
+        )
+        assert loaded is not None
+        assert loaded.access_token == "secret-x-access-token"
+        assert loaded.refresh_token == "secret-x-refresh-token"
+        assert set(loaded.scopes) == {"users.read", "tweet.read", "tweet.write", "offline.access"}
