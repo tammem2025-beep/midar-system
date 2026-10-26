@@ -88,8 +88,8 @@ def test_health_setup_and_core_crud(client: TestClient, monkeypatch):
     monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
     root = client.get("/")
     assert root.status_code == 200
-    assert '<title>M</title>' in root.text and "0.24.0" in root.text
-    assert 'href="/midar-ui.css?v=0.24.0"' in root.text
+    assert '<title>M</title>' in root.text and "0.25.0" in root.text
+    assert 'href="/midar-ui.css?v=0.25.0"' in root.text
     assert root.text.count('rel="stylesheet"') == 1
     assert client.get("/midar-ui.css").status_code == 200
     for retired in ("/styles.css", "/theme.css", "/visual-upgrade.css", "/settings-enhanced.css", "/premium-settings.css", "/experience.css", "/premium-experience.css", "/visual-redesign.css", "/dashboard-command.css", "/premium-shell.css", "/content-calendar.css"):
@@ -112,7 +112,7 @@ def test_health_setup_and_core_crud(client: TestClient, monkeypatch):
     assert settings_css_asset.status_code == 200
     for required_ui_function in ("renderEnhancedSettings", "processGoogleRedirect", "configureGoogleLogin", "loadAndApplyPreferences", "applyAppearancePrefs", "startGoogleLogin"):
         assert f"function {required_ui_function}" in settings_js_asset.text
-    assert 'href="/midar-ui.css?v=0.24.0"' in root.text
+    assert 'href="/midar-ui.css?v=0.25.0"' in root.text
     assert 'src="/settings-enhanced.js' in root.text
     assert css_asset.status_code == 200 and ".provider-grid" in css_asset.text
     assert icon_asset.status_code == 200 and "linearGradient" in icon_asset.text
@@ -189,7 +189,7 @@ def test_provider_catalog_is_truthful_and_never_exposes_secret_values(client: Te
     response = client.get("/api/v1/integrations/catalog", headers=owner)
     assert response.status_code == 200, response.text
     payload = response.json()
-    assert payload["release"] == "0.24.0"
+    assert payload["release"] == "0.25.0"
     providers = {p["platform"]: p for p in payload["providers"]}
     assert set(providers) == {"Facebook", "Instagram", "WhatsApp", "Telegram", "X", "YouTube", "TikTok", "LinkedIn", "Other"}
     assert providers["Telegram"]["implementation_status"] == "partial"
@@ -804,10 +804,10 @@ def test_short_video_drafts_are_persisted_validated_and_workspace_scoped(client:
 def test_experience_layer_and_command_center_are_served(client: TestClient):
     root = client.get("/")
     assert root.status_code == 200
-    assert 'href="/midar-ui.css?v=0.24.0"' in root.text
+    assert 'href="/midar-ui.css?v=0.25.0"' in root.text
     assert root.text.count('rel="stylesheet"') == 1
-    assert 'src="/command-center.js?v=0.24.0"' in root.text
-    assert root.text.index('src="/app.js?v=0.24.0"') < root.text.index('src="/command-center.js?v=0.24.0"')
+    assert 'src="/command-center.js?v=0.25.0"' in root.text
+    assert root.text.index('src="/app.js?v=0.25.0"') < root.text.index('src="/command-center.js?v=0.25.0"')
     css = client.get("/midar-ui.css")
     js = client.get("/command-center.js")
     assert css.status_code == 200 and "xp-command-dialog" in css.text
@@ -821,8 +821,8 @@ def test_experience_layer_and_command_center_are_served(client: TestClient):
     assert all(fragment in css.text for fragment in (".workspace-hero", ".upcoming-item", "prefers-reduced-motion", ":focus-visible", ".review-note", ".cm-month-grid"))
     sw = client.get("/sw.js")
     assert sw.status_code == 200 and "m-shell-v0240" in sw.text
-    assert "'/midar-ui.css?v=0.24.0'" in sw.text
-    assert "'/command-center.js?v=0.24.0'" in sw.text
+    assert "'/midar-ui.css?v=0.25.0'" in sw.text
+    assert "'/command-center.js?v=0.25.0'" in sw.text
     for retired in ("'/experience.css", "'/dashboard-command.css", "'/premium-shell.css", "'/content-calendar.css"):
         assert retired not in sw.text
 
@@ -886,7 +886,7 @@ def test_stylesheet_bundle_is_single_ordered_runtime_asset(client: TestClient):
     assert "overflow-y: auto" in bundle.text and "overscroll-behavior-y: contain" in bundle.text
     assert "11-sidebar-redesign.css" in bundle.text
     sw = client.get("/sw.js")
-    assert "'/midar-ui.css?v=0.24.0'" in sw.text
+    assert "'/midar-ui.css?v=0.25.0'" in sw.text
     assert "m-shell-v0240" in sw.text
 
 
@@ -905,7 +905,7 @@ def test_service_worker_precaches_settings_controller_and_favicon(client: TestCl
 def test_cross_platform_pwa_manifest_and_safe_area_assets(client: TestClient):
     page = client.get("/")
     assert page.status_code == 200
-    assert 'href="/midar-ui.css?v=0.24.0"' in page.text
+    assert 'href="/midar-ui.css?v=0.25.0"' in page.text
     for token in (
         'name="apple-mobile-web-app-capable" content="yes"',
         'name="apple-mobile-web-app-status-bar-style" content="black-translucent"',
@@ -2086,3 +2086,51 @@ def test_real_x_oauth_callback_persists_verified_account_and_encrypted_tokens(cl
         assert loaded.access_token == "secret-x-access-token"
         assert loaded.refresh_token == "secret-x-refresh-token"
         assert set(loaded.scopes) == {"users.read", "tweet.read", "tweet.write", "offline.access"}
+
+
+
+def test_scheduled_publisher_honors_delivery_gate_due_time_and_idempotency(client: TestClient, monkeypatch):
+    import asyncio
+
+    owner = create_owner(client)
+    monkeypatch.setenv("ENABLE_SCHEDULED_PUBLISHER", "true")
+    monkeypatch.setenv("ENABLE_EXTERNAL_PUBLISHING", "false")
+    due_response = client.post("/api/v1/posts", headers=owner, json={
+        "title": "منشور حان موعده", "content": "اختبار المجدول", "platform": "Telegram",
+        "status": "scheduled", "scheduled_at": "2020-01-01T00:00:00Z",
+    })
+    future_response = client.post("/api/v1/posts", headers=owner, json={
+        "title": "منشور مستقبلي", "content": "لا تنشره الآن", "platform": "Telegram",
+        "status": "scheduled", "scheduled_at": "2030-01-01T00:00:00Z",
+    })
+    assert due_response.status_code == 201, due_response.text
+    assert future_response.status_code == 201, future_response.text
+    due_id = due_response.json()["id"]
+    future_id = future_response.json()["id"]
+    calls = []
+
+    async def fake_publish(post_id, ctx, db):
+        calls.append(post_id)
+        post = db.get(main_module.Post, post_id)
+        assert post is not None
+        post.status = "published"
+        post.published_at = main_module.utcnow()
+        db.commit()
+        return post
+
+    monkeypatch.setattr(main_module, "publish_post", fake_publish)
+
+    # A due post must not reach a provider while the external-delivery safety gate is off.
+    assert asyncio.run(main_module._process_due_scheduled_posts_once()) == 0
+    assert calls == []
+
+    monkeypatch.setenv("ENABLE_EXTERNAL_PUBLISHING", "true")
+    assert asyncio.run(main_module._process_due_scheduled_posts_once()) == 1
+    assert calls == [due_id]
+
+    # A published item is no longer queued, and future posts are left alone.
+    asyncio.run(main_module._process_due_scheduled_posts_once())
+    assert calls == [due_id]
+    with SessionLocal() as db:
+        assert db.get(main_module.Post, due_id).status == "published"
+        assert db.get(main_module.Post, future_id).status == "scheduled"
