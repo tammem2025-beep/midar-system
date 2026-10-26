@@ -1066,7 +1066,9 @@ def integration_status(ctx: AuthContext = Depends(get_context), db: Session = De
         for item in providers
     )
     whatsapp_accounts_ready = bool(get_whatsapp_config()) and any(
-        item["platform"] == "WhatsApp" and int(item.get("connected_accounts", 0)) > 0
+        item["platform"] == "WhatsApp"
+        and item.get("status") == "connected"
+        and int(item.get("connected_accounts", 0)) > 0
         for item in providers
     )
     ready = bool(external_publishing_enabled and (
