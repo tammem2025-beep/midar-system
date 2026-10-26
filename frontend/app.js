@@ -363,9 +363,10 @@ async function renderAccounts(){
   const rows=accounts.length?accounts.map(a=>{
     const verifiedTelegram=a.platform==='Telegram'&&a.connection_status==='connected'&&Boolean(a.provider_account_id);
     const verifiedMeta=['Facebook','Instagram'].includes(a.platform)&&a.connection_status==='connected'&&Boolean(a.provider_account_id);
-    const verifiedOAuth=['X','TikTok','YouTube'].includes(a.platform)&&a.connection_status==='connected'&&Boolean(a.provider_account_id);
+    const verifiedOAuth=['X','TikTok','YouTube','LinkedIn'].includes(a.platform)&&a.connection_status==='connected'&&Boolean(a.provider_account_id);
+    const canReadRemoteContent=['X','TikTok','YouTube'].includes(a.platform);
     const state=verifiedMeta?status('متصل عبر Meta','good'):verifiedOAuth?status('متصل عبر OAuth','good'):verifiedTelegram?status('وجهة Telegram متحققة','good'):status('سجل محلي غير متحقق','warn');
-    const mediaAction=verifiedMeta||verifiedOAuth?'<button class="btn btn-small" data-view-remote-media="'+esc(a.id)+'">عرض المحتوى الحقيقي</button>':'';
+    const mediaAction=verifiedMeta||(verifiedOAuth&&canReadRemoteContent)?'<button class="btn btn-small" data-view-remote-media="'+esc(a.id)+'">عرض المحتوى الحقيقي</button>':'';
     const telegramAction=a.platform==='Telegram'&&a.handle&&canWriteArea('accounts')?'<button class="btn btn-small" data-telegram-verify="'+esc(a.id)+'">تحقق من القناة</button>':'';
     const deleteAction=canWriteArea('accounts')?'<button class="btn btn-small btn-danger" data-delete-account="'+esc(a.id)+'">إزالة من القائمة</button>':'';
     const actions=[mediaAction,telegramAction,deleteAction].filter(Boolean).join(' ');
