@@ -229,7 +229,7 @@ async def exchange_and_identify(
             elif config.provider == "tiktok":
                 profile_response = await client.get(
                     "https://open.tiktokapis.com/v2/user/info/",
-                    params={"fields": "open_id,display_name,username,avatar_url"},
+                    params={"fields": "open_id,display_name,avatar_url"},
                     headers=headers,
                 )
                 profile_payload = await _json_response(profile_response, provider="TikTok", operation="profile lookup")
