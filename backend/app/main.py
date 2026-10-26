@@ -1065,7 +1065,14 @@ def integration_status(ctx: AuthContext = Depends(get_context), db: Session = De
         item["platform"] in {"X", "LinkedIn"} and int(item.get("publish_ready_accounts", 0)) > 0
         for item in providers
     )
-    ready = bool(external_publishing_enabled and (telegram_destination_ready or facebook_destination_ready or oauth_text_destination_ready))
+    whatsapp_accounts_ready = bool(get_whatsapp_config()) and any(
+        item["platform"] == "WhatsApp" and int(item.get("connected_accounts", 0)) > 0
+        for item in providers
+    )
+    ready = bool(external_publishing_enabled and (
+        telegram_destination_ready or facebook_destination_ready
+        or oauth_text_destination_ready or whatsapp_accounts_ready
+    ))
     return {
         "providers": providers,
         "external_actions_enabled": ready,
@@ -1074,7 +1081,7 @@ def integration_status(ctx: AuthContext = Depends(get_context), db: Session = De
         "note": (
             "النشر الخارجي متوقف افتراضيًا كإجراء أمان. وظائف إنشاء المحتوى وإدارته محليًا متاحة، ولن يتم إرسال أي منشور إلى منصة خارجية حتى تفعيل ENABLE_EXTERNAL_PUBLISHING صراحةً بعد مراجعة الجاهزية."
             if not external_publishing_enabled else
-            "النشر الخارجي مفعّل في إعدادات الخادم؛ يمكن نشر نص إلى صفحات Facebook التي منحت pages_manage_posts فعليًا، أو إلى وجهات Telegram المتحقق منها. بقية وظائف المنصات تحتاج موصلات وموافقات مستقلة."
+            "النشر الخارجي مفعّل في إعدادات الخادم؛ يمكن نشر نص إلى صفحات Facebook التي منحت pages_manage_posts، أو إلى وجهات Telegram المتحقق منها، أو النشر النصي إلى X وLinkedIn عند منح الصلاحيات، أو إرسال ردود WhatsApp Business النصية للحساب المتحقق منه. بقية وظائف المنصات تحتاج موصلات وموافقات مستقلة."
         ),
     }
 
@@ -2597,6 +2604,8 @@ async def create_local_message(conversation_id: str, data: MessageCreate, ctx: A
 
     body = data.body.strip()
     if conversation.channel == "WhatsApp" and data.direction == "outbound":
+        if not env_flag("ENABLE_EXTERNAL_PUBLISHING", default=False):
+            raise HTTPException(status_code=423, detail="الإرسال الخارجي متوقف افتراضيًا. لم تُرسل أي رسالة؛ فعّل ENABLE_EXTERNAL_PUBLISHING صراحةً بعد التحقق من الإعدادات.")
         config = get_whatsapp_config()
         if config is None:
             raise HTTPException(status_code=503, detail="إعداد WhatsApp Business غير مكتمل على الخادم.")
