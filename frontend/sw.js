@@ -1,12 +1,12 @@
-/* M — Digital Business Management PWA shell cache — 0.24.0 */
-const CACHE='m-shell-v0240-facebook';
+/* M — Digital Business Management PWA shell cache — 0.25.0 */
+const CACHE='m-shell-v0250-scheduler';
 const SHELL_ASSETS=[
   '/',
-  '/midar-ui.css?v=0.24.0',
-  '/i18n.js?v=0.24.0',
-  '/settings-enhanced.js?v=0.24.0',
-  '/app.js?v=0.24.0',
-  '/command-center.js?v=0.24.0',
+  '/midar-ui.css?v=0.25.0',
+  '/i18n.js?v=0.25.0',
+  '/settings-enhanced.js?v=0.25.0',
+  '/app.js?v=0.25.0',
+  '/command-center.js?v=0.25.0',
   '/brand-mark.svg',
   '/brand-m-mark.svg',
   '/brand-lockup.svg',
