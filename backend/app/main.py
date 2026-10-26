@@ -42,7 +42,7 @@ from .integrations.authorization import (AuthorizationTransactionError, cleanup_
 from .integrations.catalog import PROVIDER_REGISTRY, public_provider_catalog
 from .integrations.registry import get_connector
 from .integrations.meta_graph import (META_SCOPES, MetaDeliveryUnknown, MetaGraphError, access_token_for_account, exchange_meta_code, exchange_for_long_lived_token, fetch_account_media, get_meta_config, list_granted_permissions, list_managed_pages, make_meta_authorization_url, publish_page_text as meta_publish_page_text)
-from .integrations.oauth_social import (SocialDeliveryUnknown, SocialOAuthError, exchange_and_identify, fetch_recent_content as fetch_social_recent_content, get_social_oauth_config, make_social_authorization_url, publish_text as publish_social_text)
+from .integrations.oauth_social import (SocialDeliveryUnknown, SocialOAuthError, exchange_and_identify, fetch_recent_content as fetch_social_recent_content, get_social_oauth_config, make_social_authorization_url, publish_text as publish_social_text, refresh_provider_access_token)
 from .integrations.credential_store import CredentialScopeError, CredentialStoreError, load_provider_credential, store_provider_credential
 from .security_tokens import TokenVaultError
 from .integrations.whatsapp_cloud import (WhatsAppCloudError, WhatsAppDeliveryUnknown, get_whatsapp_config, get_webhook_secrets as get_whatsapp_webhook_secrets, verify_webhook_signature, verify_business_number as whatsapp_verify_business_number, send_text as whatsapp_send_text)
@@ -1477,14 +1477,19 @@ async def publish_post(post_id: str, ctx: AuthContext = Depends(get_context), db
             meta_config = get_meta_config()
             if not meta_config:
                 raise HTTPException(status_code=503, detail="إعداد Meta غير مكتمل على الخادم")
-        try:
-            credential = load_provider_credential(
-                db, organization_id=ctx.organization.id, social_account_id=account.id,
+        if post.platform in {"X", "LinkedIn"}:
+            credential = await _load_social_credential_with_refresh(
+                db, ctx, account, {"X": "x", "LinkedIn": "linkedin"}[post.platform],
             )
-        except (CredentialStoreError, CredentialScopeError, TokenVaultError) as exc:
-            raise HTTPException(status_code=409, detail="تعذر فتح بيانات اعتماد الحساب بأمان؛ أعد ربط المنصة.") from exc
-        if credential is None:
-            raise HTTPException(status_code=409, detail="لا توجد بيانات اعتماد مشفرة لهذا الحساب؛ أعد ربط المنصة.")
+        else:
+            try:
+                credential = load_provider_credential(
+                    db, organization_id=ctx.organization.id, social_account_id=account.id,
+                )
+            except (CredentialStoreError, CredentialScopeError, TokenVaultError) as exc:
+                raise HTTPException(status_code=409, detail="تعذر فتح بيانات اعتماد الحساب بأمان؛ أعد ربط المنصة.") from exc
+            if credential is None:
+                raise HTTPException(status_code=409, detail="لا توجد بيانات اعتماد مشفرة لهذا الحساب؛ أعد ربط المنصة.")
         if required_scope and required_scope not in credential.scopes:
             raise HTTPException(status_code=409, detail=f"لم يمنح الحساب صلاحية {required_scope}. أعد التفويض مع الموافقة على الصلاحية المطلوبة.")
 
@@ -1692,6 +1697,65 @@ def _upsert_oauth_social_account(db: Session, ctx: AuthContext, identity) -> Soc
     return account
 
 
+async def _load_social_credential_with_refresh(
+    db: Session, ctx: AuthContext, account: SocialAccount, provider: str,
+):
+    """Load encrypted credentials and refresh near-expiry OAuth tokens before API use."""
+    try:
+        credential = load_provider_credential(
+            db, organization_id=ctx.organization.id, social_account_id=account.id,
+        )
+    except (CredentialStoreError, CredentialScopeError, TokenVaultError) as exc:
+        raise HTTPException(status_code=409, detail="تعذر فتح اعتماد الحساب بأمان؛ أعد ربط المنصة.") from exc
+    if credential is None:
+        raise HTTPException(status_code=409, detail="لا توجد بيانات اعتماد مشفرة لهذا الحساب؛ أعد ربط المنصة.")
+
+    expiry = credential.expires_at
+    if expiry is None:
+        return credential
+    if expiry.tzinfo is None:
+        expiry = expiry.replace(tzinfo=timezone.utc)
+    else:
+        expiry = expiry.astimezone(timezone.utc)
+    if expiry > datetime.now(timezone.utc) + timedelta(minutes=5):
+        return credential
+    if not credential.refresh_token:
+        raise HTTPException(status_code=409, detail="انتهت صلاحية رمز الوصول ولا يوجد رمز تجديد. أعد ربط الحساب من الإعدادات.")
+
+    config = get_social_oauth_config(provider)
+    if config is None:
+        raise HTTPException(status_code=503, detail=f"إعداد OAuth الخاص بـ {provider} غير مكتمل؛ لا يمكن تجديد الجلسة.")
+    # Release the read-only database transaction before provider network I/O.
+    db.commit()
+    try:
+        refreshed = await refresh_provider_access_token(config, credential.refresh_token)
+        store_provider_credential(
+            db, organization_id=ctx.organization.id, social_account_id=account.id,
+            actor_user_id=ctx.user.id, provider=account.platform,
+            access_token=refreshed.access_token, refresh_token=refreshed.refresh_token,
+            token_type=refreshed.token_type,
+            scopes=refreshed.scopes or credential.scopes, expires_at=refreshed.expires_at,
+        )
+        db.commit()
+    except (SocialOAuthError, CredentialStoreError, CredentialScopeError, TokenVaultError, IntegrityError) as exc:
+        db.rollback()
+        security_logger.warning(
+            "social_oauth_refresh_failed provider=%s organization_id=%s",
+            provider, ctx.organization.id,
+        )
+        raise HTTPException(status_code=409, detail="تعذر تجديد جلسة المنصة؛ أعد ربط الحساب وتحقق من صلاحيات تطبيق المطوّر.") from exc
+
+    try:
+        credential = load_provider_credential(
+            db, organization_id=ctx.organization.id, social_account_id=account.id,
+        )
+    except (CredentialStoreError, CredentialScopeError, TokenVaultError) as exc:
+        raise HTTPException(status_code=409, detail="تعذر تحميل الاعتماد المجدد؛ أعد ربط الحساب.") from exc
+    if credential is None:
+        raise HTTPException(status_code=409, detail="لم يتم حفظ الاعتماد المجدد؛ أعد ربط الحساب.")
+    return credential
+
+
 @app.post(f"{API_PREFIX}/integrations/oauth/{{provider}}/connect-url")
 def social_oauth_connect_url(
     provider: str, request: Request, ctx: AuthContext = Depends(get_context), db: Session = Depends(get_db),
@@ -1820,19 +1884,13 @@ async def social_oauth_account_media(
     ))
     if account is None:
         raise HTTPException(status_code=404, detail="الحساب غير متصل أو غير موجود ضمن مساحة العمل الحالية.")
+    credential = await _load_social_credential_with_refresh(db, ctx, account, provider)
     try:
-        credential = load_provider_credential(
-            db, organization_id=ctx.organization.id, social_account_id=account.id,
-        )
-        if credential is None:
-            raise HTTPException(status_code=409, detail="لا توجد بيانات اعتماد لهذا الحساب؛ أعد ربط المنصة.")
         items = await fetch_social_recent_content(
             provider, credential.access_token, account.provider_account_id,
             scopes=credential.scopes, limit=limit,
         )
-    except HTTPException:
-        raise
-    except (SocialOAuthError, CredentialStoreError, CredentialScopeError, TokenVaultError) as exc:
+    except SocialOAuthError as exc:
         raise HTTPException(status_code=502, detail=str(exc)[:400]) from exc
     account.last_synced_at = utcnow()
     audit(db, ctx, f"integration.{provider}_media_read", "social_account", account.id, {"count": len(items)})
