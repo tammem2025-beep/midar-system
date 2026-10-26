@@ -820,7 +820,7 @@ def test_experience_layer_and_command_center_are_served(client: TestClient):
         assert fragment in app_js.text
     assert all(fragment in css.text for fragment in (".workspace-hero", ".upcoming-item", "prefers-reduced-motion", ":focus-visible", ".review-note", ".cm-month-grid"))
     sw = client.get("/sw.js")
-    assert sw.status_code == 200 and "m-shell-v0240" in sw.text
+    assert sw.status_code == 200 and "m-shell-v0250" in sw.text
     assert "'/midar-ui.css?v=0.25.0'" in sw.text
     assert "'/command-center.js?v=0.25.0'" in sw.text
     for retired in ("'/experience.css", "'/dashboard-command.css", "'/premium-shell.css", "'/content-calendar.css"):
@@ -887,13 +887,13 @@ def test_stylesheet_bundle_is_single_ordered_runtime_asset(client: TestClient):
     assert "11-sidebar-redesign.css" in bundle.text
     sw = client.get("/sw.js")
     assert "'/midar-ui.css?v=0.25.0'" in sw.text
-    assert "m-shell-v0240" in sw.text
+    assert "m-shell-v0250" in sw.text
 
 
 def test_service_worker_precaches_settings_controller_and_favicon(client: TestClient):
     sw = client.get("/sw.js")
     assert sw.status_code == 200
-    assert "m-shell-v0240" in sw.text
+    assert "m-shell-v0250" in sw.text
     assert "'/settings-enhanced.js" in sw.text
     icon = client.get("/favicon.ico")
     assert icon.status_code == 200
@@ -936,7 +936,7 @@ def test_cross_platform_responsive_css_and_mobile_drawer_accessibility(client: T
         assert token in css.text
     for token in ("aria-modal", "sidebar.inert=true", "event.key==='Escape'", "installButton.addEventListener('click'", "navigator.standalone", "shouldOpen?'إغلاق القائمة':'فتح القائمة'", "isAppleTouchDevice()", "document.body.style.position='fixed'", "window.scrollTo(0,mobileNavScrollY)"):
         assert token in js.text
-    assert "m-shell-v0240" in sw.text
+    assert "m-shell-v0250" in sw.text
     for asset in ("/icon-192.png", "/icon-512.png", "/apple-touch-icon.png"):
         assert f"'{asset}'" in sw.text
 
