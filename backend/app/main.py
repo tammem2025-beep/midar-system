@@ -168,7 +168,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="M API",
     description="M API — Manage. Connect. Grow. يتضمن تسجيل Google الاختياري وقراءة محتوى Facebook Pages وحسابات Instagram الاحترافية بعد إعداد OAuth.",
-    version="0.25.0",
+    version="0.25.1",
     lifespan=lifespan,
 )
 

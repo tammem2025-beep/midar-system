@@ -56,7 +56,7 @@ def test_m_brand_assets_and_pwa_metadata_are_coherent():
     assert '<button class="topbar-action" type="button" id="globalCreatePostBtn"' in page
     assert "accountSettingsBtn" not in page
     assert "languageToggleBtn" in page and "languageToggleAuthBtn" in page
-    assert '/i18n.js?v=0.25.0' in page
+    assert '/i18n.js?v=0.25.1' in page
     assert '<h1>M</h1>' not in page
     assert '<b>M</b>' not in page
     lockup = (ROOT / "frontend" / "brand-lockup.svg").read_text(encoding="utf-8")
@@ -73,13 +73,13 @@ def test_m_brand_assets_and_pwa_metadata_are_coherent():
 
 def test_runtime_assets_use_a_single_release_version():
     version = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
-    assert version == "0.25.0"
+    assert version == "0.25.1"
     page = (ROOT / "frontend" / "index.html").read_text(encoding="utf-8")
     sw = (ROOT / "frontend" / "sw.js").read_text(encoding="utf-8")
     app = (ROOT / "frontend" / "app.js").read_text(encoding="utf-8")
     api = (ROOT / "backend" / "app" / "main.py").read_text(encoding="utf-8")
     assert f"midar-ui.css?v={version}" in page
-    assert "m-shell-v0250-facebook" in sw
+    assert "m-shell-v0251-platform-fixes" in sw
     assert f"sw.js?v={version}" in app
     assert f'version="{version}"' in api
 
@@ -122,11 +122,11 @@ def test_same_release_social_feed_and_keyboard_menu_improvements():
     assert "selected==='reels'" in app
     assert 'data-view-remote-media="' in app
     assert "event.key==='Escape'" in app
-    assert 'href="/midar-ui.css?v=0.25.0"' in page
-    assert "m-shell-v0250-facebook" in sw
+    assert 'href="/midar-ui.css?v=0.25.1"' in page
+    assert "m-shell-v0251-platform-fixes" in sw
     assert "Same-release visual patch" in brand
     assert "Same-release visual patch" in bundle
-    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "0.25.0"
+    assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "0.25.1"
 
 
 def test_portable_windows_archive_has_independent_data_directory():
@@ -136,4 +136,27 @@ def test_portable_windows_archive_has_independent_data_directory():
     assert "portable-mode.flag" in launcher
     assert "M-Portable-Data" in launcher
     assert "M-Windows-x64-Portable" in workflow
-    assert "M-Portable-0.25.0-Windows-x64.zip" in workflow
+    assert "M-Portable-0.25.1-Windows-x64.zip" in workflow
+
+
+def test_account_connect_actions_and_local_video_playback_are_exposed():
+    app = (ROOT / "frontend" / "app.js").read_text(encoding="utf-8")
+    settings = (ROOT / "frontend" / "settings-enhanced.js").read_text(encoding="utf-8")
+
+    # These buttons invoke existing server OAuth flows; they are not local
+    # "connected" flags or account records.
+    assert "data-connect-provider" in app
+    assert "providerConnectKeys" in app
+    assert "https://mail.google.com/" in app
+    assert "https://www.facebook.com/" in app
+    assert "https://www.instagram.com/" in app
+    assert "https://www.tiktok.com/" in app
+    assert "startSocialProviderConnect" in settings
+    assert "/integrations/oauth/${provider}/connect-url" in settings
+
+    # Uploaded videos are fetched through the authenticated media endpoint and
+    # rendered in a native HTML5 player.
+    assert "async function previewMediaAsset" in app
+    assert 'data-media-preview="' in app
+    assert "Authorization:'Bearer '+token" in app
+    assert '<video class="studio-preview-player" controls autoplay playsinline' in app
