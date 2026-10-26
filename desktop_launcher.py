@@ -62,6 +62,9 @@ def configure_local_environment() -> tuple[Path, Path, Path]:
                     "META_GRAPH_API_VERSION=v26.0",
                     "TELEGRAM_BOT_TOKEN=",
                     "PROVIDER_TOKEN_ENCRYPTION_KEY=",
+                    "ENABLE_EXTERNAL_PUBLISHING=false",
+                    "ENABLE_SCHEDULED_PUBLISHER=true",
+                    "SCHEDULED_PUBLISHER_POLL_SECONDS=15",
                     "",
                 ]
             ),
