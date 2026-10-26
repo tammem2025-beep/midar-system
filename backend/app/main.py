@@ -112,7 +112,7 @@ def prepare_local_schema():
                 connection.execute(text("CREATE INDEX ix_posts_social_account_id ON posts (social_account_id)"))
 
 
-async def _scheduled_publisher_interval() -> float:
+def _scheduled_publisher_interval() -> float:
     """Return a bounded polling interval so a bad local setting cannot spin the worker."""
     try:
         value = float(os.getenv("SCHEDULED_PUBLISHER_POLL_SECONDS", "15"))
@@ -125,7 +125,7 @@ async def _scheduled_publisher_interval() -> float:
 
 async def _scheduled_publishing_loop() -> None:
     """Publish eligible due posts while this M backend process remains running."""
-    interval = await _scheduled_publisher_interval()
+    interval = _scheduled_publisher_interval()
     while True:
         try:
             await _process_due_scheduled_posts_once(limit=20)
