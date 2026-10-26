@@ -88,8 +88,8 @@ def test_health_setup_and_core_crud(client: TestClient, monkeypatch):
     monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
     root = client.get("/")
     assert root.status_code == 200
-    assert '<title>M</title>' in root.text and "0.25.0" in root.text
-    assert 'href="/midar-ui.css?v=0.25.0"' in root.text
+    assert '<title>M</title>' in root.text and "0.25.1" in root.text
+    assert 'href="/midar-ui.css?v=0.25.1"' in root.text
     assert root.text.count('rel="stylesheet"') == 1
     assert client.get("/midar-ui.css").status_code == 200
     for retired in ("/styles.css", "/theme.css", "/visual-upgrade.css", "/settings-enhanced.css", "/premium-settings.css", "/experience.css", "/premium-experience.css", "/visual-redesign.css", "/dashboard-command.css", "/premium-shell.css", "/content-calendar.css"):
@@ -112,7 +112,7 @@ def test_health_setup_and_core_crud(client: TestClient, monkeypatch):
     assert settings_css_asset.status_code == 200
     for required_ui_function in ("renderEnhancedSettings", "processGoogleRedirect", "configureGoogleLogin", "loadAndApplyPreferences", "applyAppearancePrefs", "startGoogleLogin"):
         assert f"function {required_ui_function}" in settings_js_asset.text
-    assert 'href="/midar-ui.css?v=0.25.0"' in root.text
+    assert 'href="/midar-ui.css?v=0.25.1"' in root.text
     assert 'src="/settings-enhanced.js' in root.text
     assert css_asset.status_code == 200 and ".provider-grid" in css_asset.text
     assert icon_asset.status_code == 200 and "linearGradient" in icon_asset.text
@@ -189,7 +189,7 @@ def test_provider_catalog_is_truthful_and_never_exposes_secret_values(client: Te
     response = client.get("/api/v1/integrations/catalog", headers=owner)
     assert response.status_code == 200, response.text
     payload = response.json()
-    assert payload["release"] == "0.25.0"
+    assert payload["release"] == "0.25.1"
     providers = {p["platform"]: p for p in payload["providers"]}
     assert set(providers) == {"Facebook", "Instagram", "WhatsApp", "Telegram", "X", "YouTube", "TikTok", "LinkedIn", "Other"}
     assert providers["Telegram"]["implementation_status"] == "partial"
@@ -804,10 +804,10 @@ def test_short_video_drafts_are_persisted_validated_and_workspace_scoped(client:
 def test_experience_layer_and_command_center_are_served(client: TestClient):
     root = client.get("/")
     assert root.status_code == 200
-    assert 'href="/midar-ui.css?v=0.25.0"' in root.text
+    assert 'href="/midar-ui.css?v=0.25.1"' in root.text
     assert root.text.count('rel="stylesheet"') == 1
-    assert 'src="/command-center.js?v=0.25.0"' in root.text
-    assert root.text.index('src="/app.js?v=0.25.0"') < root.text.index('src="/command-center.js?v=0.25.0"')
+    assert 'src="/command-center.js?v=0.25.1"' in root.text
+    assert root.text.index('src="/app.js?v=0.25.1"') < root.text.index('src="/command-center.js?v=0.25.1"')
     css = client.get("/midar-ui.css")
     js = client.get("/command-center.js")
     assert css.status_code == 200 and "xp-command-dialog" in css.text
@@ -820,9 +820,9 @@ def test_experience_layer_and_command_center_are_served(client: TestClient):
         assert fragment in app_js.text
     assert all(fragment in css.text for fragment in (".workspace-hero", ".upcoming-item", "prefers-reduced-motion", ":focus-visible", ".review-note", ".cm-month-grid"))
     sw = client.get("/sw.js")
-    assert sw.status_code == 200 and "m-shell-v0250" in sw.text
-    assert "'/midar-ui.css?v=0.25.0'" in sw.text
-    assert "'/command-center.js?v=0.25.0'" in sw.text
+    assert sw.status_code == 200 and "m-shell-v0251" in sw.text
+    assert "'/midar-ui.css?v=0.25.1'" in sw.text
+    assert "'/command-center.js?v=0.25.1'" in sw.text
     for retired in ("'/experience.css", "'/dashboard-command.css", "'/premium-shell.css", "'/content-calendar.css"):
         assert retired not in sw.text
 
@@ -886,14 +886,14 @@ def test_stylesheet_bundle_is_single_ordered_runtime_asset(client: TestClient):
     assert "overflow-y: auto" in bundle.text and "overscroll-behavior-y: contain" in bundle.text
     assert "11-sidebar-redesign.css" in bundle.text
     sw = client.get("/sw.js")
-    assert "'/midar-ui.css?v=0.25.0'" in sw.text
-    assert "m-shell-v0250" in sw.text
+    assert "'/midar-ui.css?v=0.25.1'" in sw.text
+    assert "m-shell-v0251" in sw.text
 
 
 def test_service_worker_precaches_settings_controller_and_favicon(client: TestClient):
     sw = client.get("/sw.js")
     assert sw.status_code == 200
-    assert "m-shell-v0250" in sw.text
+    assert "m-shell-v0251" in sw.text
     assert "'/settings-enhanced.js" in sw.text
     icon = client.get("/favicon.ico")
     assert icon.status_code == 200
@@ -905,7 +905,7 @@ def test_service_worker_precaches_settings_controller_and_favicon(client: TestCl
 def test_cross_platform_pwa_manifest_and_safe_area_assets(client: TestClient):
     page = client.get("/")
     assert page.status_code == 200
-    assert 'href="/midar-ui.css?v=0.25.0"' in page.text
+    assert 'href="/midar-ui.css?v=0.25.1"' in page.text
     for token in (
         'name="apple-mobile-web-app-capable" content="yes"',
         'name="apple-mobile-web-app-status-bar-style" content="black-translucent"',
@@ -936,7 +936,7 @@ def test_cross_platform_responsive_css_and_mobile_drawer_accessibility(client: T
         assert token in css.text
     for token in ("aria-modal", "sidebar.inert=true", "event.key==='Escape'", "installButton.addEventListener('click'", "navigator.standalone", "shouldOpen?'إغلاق القائمة':'فتح القائمة'", "isAppleTouchDevice()", "document.body.style.position='fixed'", "window.scrollTo(0,mobileNavScrollY)"):
         assert token in js.text
-    assert "m-shell-v0250" in sw.text
+    assert "m-shell-v0251" in sw.text
     for asset in ("/icon-192.png", "/icon-512.png", "/apple-touch-icon.png"):
         assert f"'{asset}'" in sw.text
 
