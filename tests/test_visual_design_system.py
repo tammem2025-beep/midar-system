@@ -137,3 +137,26 @@ def test_portable_windows_archive_has_independent_data_directory():
     assert "M-Portable-Data" in launcher
     assert "M-Windows-x64-Portable" in workflow
     assert "M-Portable-0.25.1-Windows-x64.zip" in workflow
+
+
+def test_account_connect_actions_and_local_video_playback_are_exposed():
+    app = (ROOT / "frontend" / "app.js").read_text(encoding="utf-8")
+    settings = (ROOT / "frontend" / "settings-enhanced.js").read_text(encoding="utf-8")
+
+    # These buttons invoke existing server OAuth flows; they are not local
+    # "connected" flags or account records.
+    assert "data-connect-provider" in app
+    assert "providerConnectKeys" in app
+    assert "https://mail.google.com/" in app
+    assert "https://www.facebook.com/" in app
+    assert "https://www.instagram.com/" in app
+    assert "https://www.tiktok.com/" in app
+    assert "startSocialProviderConnect" in settings
+    assert "/integrations/oauth/${provider}/connect-url" in settings
+
+    # Uploaded videos are fetched through the authenticated media endpoint and
+    # rendered in a native HTML5 player.
+    assert "async function previewMediaAsset" in app
+    assert 'data-media-preview="' in app
+    assert "Authorization:'Bearer '+token" in app
+    assert '<video class="studio-preview-player" controls autoplay playsinline' in app
