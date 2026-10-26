@@ -1959,3 +1959,64 @@ async def test_tiktok_refresh_reads_nested_token_response_and_keeps_rotated_toke
     assert refreshed.access_token == "tiktok-refreshed-access"
     assert refreshed.refresh_token == "tiktok-rotated-refresh"
     assert set(refreshed.scopes) == {"user.info.basic", "video.list"}
+
+
+
+def test_existing_social_credential_can_be_rotated_by_active_workspace_member(client: TestClient, monkeypatch):
+    from app.integrations.credential_store import (
+        load_provider_credential, refresh_provider_credential, store_provider_credential,
+    )
+    from app.security_tokens import generate_provider_encryption_key
+
+    monkeypatch.setenv("PROVIDER_TOKEN_ENCRYPTION_KEY", generate_provider_encryption_key())
+    owner_headers = create_owner(client, "oauth-refresh-owner@example.com")
+    account_response = client.post("/api/v1/social-accounts", headers=owner_headers, json={
+        "platform": "X", "account_name": "X refresh test", "handle": "@x-refresh-test",
+    })
+    assert account_response.status_code == 201, account_response.text
+    account_id = account_response.json()["id"]
+
+    with SessionLocal() as db:
+        owner = db.query(User).filter(User.email == "oauth-refresh-owner@example.com").one()
+        membership = db.query(Membership).filter(Membership.user_id == owner.id).one()
+        account = db.get(SocialAccount, account_id)
+        account.connection_status = "connected"
+        account.provider_account_id = "1234509876"
+        db.commit()
+        store_provider_credential(
+            db, organization_id=membership.organization_id, social_account_id=account_id,
+            actor_user_id=owner.id, provider="X", access_token="old-x-access",
+            refresh_token="old-x-refresh", scopes=("users.read", "tweet.read"),
+            expires_at=utcnow() + timedelta(hours=1),
+        )
+        db.commit()
+
+    editor_headers = create_member(client, owner_headers, "editor", "oauth-refresh-editor@example.com")
+    with SessionLocal() as db:
+        editor = db.query(User).filter(User.email == "oauth-refresh-editor@example.com").one()
+        membership = db.query(Membership).filter(Membership.user_id == editor.id).one()
+        refreshed_row = refresh_provider_credential(
+            db, organization_id=membership.organization_id, social_account_id=account_id,
+            actor_user_id=editor.id, access_token="new-x-access",
+            refresh_token="new-x-refresh", token_type="Bearer",
+            scopes=("users.read", "tweet.read", "tweet.write"),
+            expires_at=utcnow() + timedelta(hours=2),
+        )
+        db.commit()
+        loaded = load_provider_credential(
+            db, organization_id=membership.organization_id, social_account_id=account_id,
+        )
+        assert loaded is not None
+        assert loaded.access_token == "new-x-access"
+        assert loaded.refresh_token == "new-x-refresh"
+        assert set(loaded.scopes) == {"users.read", "tweet.read", "tweet.write"}
+        assert refreshed_row.access_token_ciphertext != "new-x-access"
+        assert "new-x-access" not in refreshed_row.access_token_ciphertext
+        audit_rows = db.query(AuditLog).filter(
+            AuditLog.organization_id == membership.organization_id,
+            AuditLog.action == "integration.credential_refreshed",
+            AuditLog.entity_id == account_id,
+        ).all()
+        assert len(audit_rows) == 1
+        assert "new-x-access" not in audit_rows[0].details
+        assert "new-x-refresh" not in audit_rows[0].details
