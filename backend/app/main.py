@@ -43,7 +43,7 @@ from .integrations.catalog import PROVIDER_REGISTRY, public_provider_catalog
 from .integrations.registry import get_connector
 from .integrations.meta_graph import (META_SCOPES, MetaDeliveryUnknown, MetaGraphError, access_token_for_account, exchange_meta_code, exchange_for_long_lived_token, fetch_account_media, get_meta_config, list_granted_permissions, list_managed_pages, make_meta_authorization_url, publish_page_text as meta_publish_page_text)
 from .integrations.oauth_social import (SocialDeliveryUnknown, SocialOAuthError, exchange_and_identify, fetch_recent_content as fetch_social_recent_content, get_social_oauth_config, make_social_authorization_url, publish_text as publish_social_text, refresh_provider_access_token)
-from .integrations.credential_store import CredentialScopeError, CredentialStoreError, load_provider_credential, store_provider_credential
+from .integrations.credential_store import CredentialScopeError, CredentialStoreError, load_provider_credential, refresh_provider_credential, store_provider_credential
 from .security_tokens import TokenVaultError
 from .integrations.whatsapp_cloud import (WhatsAppCloudError, WhatsAppDeliveryUnknown, get_whatsapp_config, get_webhook_secrets as get_whatsapp_webhook_secrets, verify_webhook_signature, verify_business_number as whatsapp_verify_business_number, send_text as whatsapp_send_text)
 
@@ -1729,11 +1729,10 @@ async def _load_social_credential_with_refresh(
     db.commit()
     try:
         refreshed = await refresh_provider_access_token(config, credential.refresh_token)
-        store_provider_credential(
+        refresh_provider_credential(
             db, organization_id=ctx.organization.id, social_account_id=account.id,
-            actor_user_id=ctx.user.id, provider=account.platform,
-            access_token=refreshed.access_token, refresh_token=refreshed.refresh_token,
-            token_type=refreshed.token_type,
+            actor_user_id=ctx.user.id, access_token=refreshed.access_token,
+            refresh_token=refreshed.refresh_token, token_type=refreshed.token_type,
             scopes=refreshed.scopes or credential.scopes, expires_at=refreshed.expires_at,
         )
         db.commit()
