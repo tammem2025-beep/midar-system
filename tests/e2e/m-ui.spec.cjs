@@ -59,6 +59,14 @@ test('M first-run setup, single create action, bilingual shell, theme and mobile
   await expect(page.locator('#accountMenu')).toBeHidden();
   await expect(page.locator('#accountMenuBtn')).toBeFocused();
 
+  // Social platforms are opened from their in-page cards, not a duplicate top link strip.
+  await page.locator('#nav [data-page="accounts"]').click();
+  await expect(page.locator('.provider-grid')).toBeVisible();
+  await expect(page.locator('.provider-launchpad')).toHaveCount(0);
+  await expect(page.locator('.provider-launch-icon[data-open-provider="Facebook"]')).toBeVisible();
+  await expect(page.locator('.provider-launch-icon[data-open-provider="Telegram"]')).toBeVisible();
+  await page.locator('#nav [data-page="dashboard"]').click();
+
   await page.locator('#nav [data-page="settings"]').click();
   await expect(page.locator('.settings-layout-v2')).toBeVisible();
   await page.locator('.settings-nav-v2 [data-settings-tab="appearance"]').click();

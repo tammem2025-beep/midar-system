@@ -1,12 +1,12 @@
-/* M — Digital Business Management PWA shell cache — 0.25.1 */
-const CACHE='m-shell-v0251-platform-fixes';
+/* M — Digital Business Management PWA shell cache — 0.26.0 */
+const CACHE='m-shell-v0260-social-hub-premium';
 const SHELL_ASSETS=[
   '/',
-  '/midar-ui.css?v=0.25.1',
-  '/i18n.js?v=0.25.1',
-  '/settings-enhanced.js?v=0.25.1',
-  '/app.js?v=0.25.1',
-  '/command-center.js?v=0.25.1',
+  '/midar-ui.css?v=0.26.0',
+  '/i18n.js?v=0.26.0',
+  '/settings-enhanced.js?v=0.26.0',
+  '/app.js?v=0.26.0',
+  '/command-center.js?v=0.26.0',
   '/brand-mark.svg',
   '/brand-m-mark.svg',
   '/brand-lockup.svg',

@@ -26,6 +26,7 @@ MODULES = [
     "12-cross-platform.css",
     "13-design-system.css",
     "14-m-brand-identity.css",
+    "15-social-hub-premium.css",
 ]
 
 VERSION = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
