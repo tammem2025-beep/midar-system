@@ -84,7 +84,7 @@
 **محتوى إصدار 0.25.1:** يضيف عامل جدولة للمنشورات المستحقة مع منع التكرار عند التنافس بين العمليات، إلى جانب موصلات 0.24.0 للنشر النصي على Facebook وX وLinkedIn وTelegram وربط OAuth/قراءة المحتوى المدعوم وWhatsApp Business. تتطلب الوظائف إعداد تطبيقات المطور والصلاحيات على حسابك؛ النشر الخارجي يبقى متوقفًا حتى تضبط `ENABLE_EXTERNAL_PUBLISHING=true`. توقيع Authenticode يتطلب شهادة ناشر موثوقة؛ إن لم تُضبط شهادة في GitHub Secrets فسيظل المثبت غير موقّع وقد يعرض SmartScreen تحذيرًا.
 
 
-الإصدار الجاري تطويره **M 0.25.1**. تعليمات إعداد كل مزوّد ومفاتيح OAuth وWebhook موجودة في [دليل ربط المنصات الاجتماعية](docs/SOCIAL-INTEGRATIONS-SETUP-AR.md)، مع دليل [إعداد Google وMeta](docs/META-GOOGLE-CONNECTION-SETUP-AR.md).
+آخر إصدار منشور موثق هنا هو **M 0.25.1**؛ أما تحديث **M 0.26.0** فهو على فرع مراجعة منفصل ولم يُنشر كإصدار رسمي بعد. تعليمات إعداد كل مزوّد ومفاتيح OAuth وWebhook موجودة في [دليل ربط المنصات الاجتماعية](docs/SOCIAL-INTEGRATIONS-SETUP-AR.md)، مع دليل [إعداد Google وMeta](docs/META-GOOGLE-CONNECTION-SETUP-AR.md).
 
 **صفحة التنزيل الرسمية:** [تحميل أحدث إصدار من M لويندوز](https://github.com/tammem2025-beep/midar-system/releases/latest)
 
