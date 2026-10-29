@@ -5,7 +5,7 @@ import re
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_m_brand_module_is_the_last_runtime_css_layer():
+def test_brand_and_social_hub_modules_are_the_last_runtime_css_layers():
     builder = (ROOT / "tools" / "build_frontend_css.py").read_text(encoding="utf-8")
     assert '"13-design-system.css"' in builder
     assert '"14-m-brand-identity.css"' in builder
@@ -125,7 +125,7 @@ def test_same_release_social_feed_and_keyboard_menu_improvements():
     assert 'data-view-remote-media="' in app
     assert "event.key==='Escape'" in app
     assert 'href="/midar-ui.css?v=0.26.0"' in page
-    assert "m-shell-v0251-platform-fixes" in sw
+    assert "m-shell-v0260-social-hub-premium" in sw
     assert "Same-release visual patch" in brand
     assert "Same-release visual patch" in bundle
     assert (ROOT / "VERSION").read_text(encoding="utf-8").strip() == "0.26.0"
