@@ -175,3 +175,17 @@ def test_social_hub_icons_and_premium_layer_are_present():
     assert "15-social-hub-premium.css" in (ROOT / "tools" / "build_frontend_css.py").read_text(encoding="utf-8")
     assert "M 0.26.0 — premium social hub" in module
     assert "M 0.26.0 — premium social hub" in bundle
+
+
+def test_windows_installer_uses_m_brand_icon_version_and_default_desktop_shortcut():
+    installer = (ROOT / "installer" / "M.iss").read_text(encoding="utf-8")
+    workflow = (ROOT / ".github" / "workflows" / "release-windows.yml").read_text(encoding="utf-8")
+    launcher = (ROOT / "desktop_launcher.py").read_text(encoding="utf-8")
+    assert '#define ProductVersion "0.26.0"' in installer
+    assert "SetupIconFile=..\\frontend\\favicon.ico" in installer
+    assert "UninstallDisplayIcon={app}\\M.exe" in installer
+    assert "Flags: unchecked" not in installer
+    assert "--icon frontend\\favicon.ico" in workflow
+    assert '$portableFrontend = Join-Path $portableRoot "frontend"' in workflow
+    assert 'self.root.iconbitmap(default=str(icon_path))' in launcher
+    assert 'icon_path = app_dir / "frontend" / "favicon.ico"' in launcher

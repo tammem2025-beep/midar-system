@@ -1,5 +1,5 @@
 #define ProductName "M"
-#define ProductVersion "0.25.1"
+#define ProductVersion "0.26.0"
 #define ProductPublisher "M Digital Business Management"
 
 [Setup]
@@ -18,6 +18,8 @@ OutputBaseFilename=M-Setup-{#ProductVersion}-Windows-x64
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
+SetupIconFile=..\frontend\favicon.ico
+UninstallDisplayIcon={app}\M.exe
 UninstallDisplayName=M — Digital Business Management
 CloseApplications=yes
 RestartApplications=no
@@ -26,7 +28,7 @@ RestartApplications=no
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
-Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional shortcuts:"; Flags: unchecked
+Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional shortcuts:"; 
 
 [Files]
 Source: "..\dist\M\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs

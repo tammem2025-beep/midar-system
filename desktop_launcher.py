@@ -145,6 +145,13 @@ class MDesktop:
 
         self.root = tk.Tk()
         self.root.title("M — Digital Business Management")
+        app_dir = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
+        icon_path = app_dir / "frontend" / "favicon.ico"
+        try:
+            if icon_path.is_file():
+                self.root.iconbitmap(default=str(icon_path))
+        except tk.TclError:
+            logging.debug("Could not apply the M window icon", exc_info=True)
         self.root.geometry("520x350")
         self.root.minsize(460, 320)
         self.root.configure(bg="#0B1020")

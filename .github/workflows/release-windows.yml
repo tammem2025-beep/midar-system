@@ -55,7 +55,7 @@ jobs:
       - name: Build desktop application directory
         shell: pwsh
         run: |
-          python -m PyInstaller --noconfirm --clean --onedir --windowed --name M --paths backend --collect-submodules app --collect-all uvicorn --collect-all cryptography --collect-all PIL --collect-all sqlalchemy.dialects.sqlite --collect-all email_validator desktop_launcher.py
+          python -m PyInstaller --noconfirm --clean --onedir --windowed --name M --icon frontend\favicon.ico --paths backend --collect-submodules app --collect-all uvicorn --collect-all cryptography --collect-all PIL --collect-all sqlalchemy.dialects.sqlite --collect-all email_validator desktop_launcher.py
           if (!(Test-Path "dist\M\M.exe")) { throw "PyInstaller did not produce dist\M\M.exe" }
 
       - name: Sign desktop executable before packaging when a trusted certificate is configured
@@ -129,6 +129,9 @@ jobs:
           if (Test-Path $portableRoot) { Remove-Item -LiteralPath $portableRoot -Recurse -Force }
           New-Item -ItemType Directory -Path $portableRoot -Force | Out-Null
           Copy-Item -Path "dist\M\*" -Destination $portableRoot -Recurse -Force
+          $portableFrontend = Join-Path $portableRoot "frontend"
+          New-Item -ItemType Directory -Path $portableFrontend -Force | Out-Null
+          Copy-Item -Path "frontend\*" -Destination $portableFrontend -Recurse -Force
           Set-Content -LiteralPath (Join-Path $portableRoot "portable-mode.flag") -Value "M-PORTABLE-DATA-V1" -Encoding Ascii
           New-Item -ItemType Directory -Path "installer\output" -Force | Out-Null
           $archive = "installer\output\M-Portable-0.26.0-Windows-x64.zip"
