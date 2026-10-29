@@ -63,8 +63,8 @@ test('M first-run setup, single create action, bilingual shell, theme and mobile
   await page.locator('#nav [data-page="accounts"]').click();
   await expect(page.locator('.provider-grid')).toBeVisible();
   await expect(page.locator('.provider-launchpad')).toHaveCount(0);
-  await expect(page.locator('[data-open-provider="Facebook"]')).toBeVisible();
-  await expect(page.locator('[data-open-provider="Telegram"]')).toBeVisible();
+  await expect(page.locator('.provider-launch-icon[data-open-provider="Facebook"]')).toBeVisible();
+  await expect(page.locator('.provider-launch-icon[data-open-provider="Telegram"]')).toBeVisible();
   await page.locator('#nav [data-page="dashboard"]').click();
 
   await page.locator('#nav [data-page="settings"]').click();
